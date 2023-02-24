@@ -1,0 +1,22 @@
+MODEL:
+  META_ARCHITECTURE: "YoloV3"
+  BACKBONE:
+    NAME: "build_darknet53_backbone"
+  DARKNET:
+    OUT_FEATURES: [ "d3", "d4", "d5" ]
+  FPN:
+    NAME: "build_fpn"
+
+  YOLO:
+
+
+DATASETS:
+  TRAIN:
+  TEST:
+
+SOLVER:
+
+INPUT:
+  MIN_SIZE_TRAIN: (416,)
+
+VERSION: 2
