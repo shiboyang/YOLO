@@ -7,34 +7,34 @@
 import torch.nn as nn
 from typing import List
 from collections import OrderedDict
-from detectron2.modeling.backbone import BACKBONE_REGISTRY
+
+from detectron2.layers import get_norm
+
+from detectron2.modeling.backbone import BACKBONE_REGISTRY, Backbone
+from detectron2.layers.blocks import CNNBlockBase
 
 
-class DarkNet(nn.Module):
+class DarkNet(Backbone):
 
-    def __init__(self, layers: List[int]):
+    def __init__(self, stem, layers: List[int]):
         super(DarkNet, self).__init__()
         self.in_channel = 32
-        self.conv1 = nn.Conv2d(3, self.in_channel, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(256, eps=1e-5, momentum=0.1)
-        self.relu1 = nn.LeakyReLU(0.1)
+        self.stem = stem
 
-        self.dark1 = self._make_layers(layers[0], [32, 64])
+        self.dark1 = self._make_dark(layers[0], [32, 64])
 
-        self.dark2 = self._make_layers(layers[1], [64, 128])
+        self.dark2 = self._make_dark(layers[1], [64, 128])
 
-        self.dark3 = self._make_layers(layers[2], [128, 256])
+        self.dark3 = self._make_dark(layers[2], [128, 256])
 
-        self.dark4 = self._make_layers(layers[3], [256, 512])
+        self.dark4 = self._make_dark(layers[3], [256, 512])
 
-        self.dark5 = self._make_layers(layers[4], [512, 102])
+        self.dark5 = self._make_dark(layers[4], [512, 1024])
 
         self._out_features = ("d1", "d2", "d3", "d4", "d5")
 
     def forward(self, x):
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu1(out)
+        out = self.stem(x)
         res_dark1 = self.dark1(out)
         res_dark2 = self.dark2(res_dark1)
         res_dark3 = self.dark3(res_dark2)
@@ -64,7 +64,7 @@ class DownSample(nn.Module):
 
     def __init__(self, in_channel, out_channel):
         super(DownSample, self).__init__()
-        self.conv = nn.Conv2d(in_channel, out_channels=out_channel, kernel_size=1, stride=2, padding=1,
+        self.conv = nn.Conv2d(in_channel, out_channels=out_channel, kernel_size=3, stride=2, padding=1,
                               bias=False)
 
         self.bn = nn.BatchNorm2d(out_channel, eps=1e-5, momentum=0.1)
@@ -108,7 +108,40 @@ class Residual(nn.Module):
         return out
 
 
+class BasicStem(CNNBlockBase):
+    """
+    A standard Darknet53 stem
+    """
+
+    def __init__(self, in_channels, out_channels, norm="BN"):
+        super(BasicStem, self).__init__(in_channels, out_channels, 1)
+        self.conv1 = nn.Conv2d(in_channels, self.out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn1 = get_norm(norm, self.out_channels)
+        self.relu1 = nn.LeakyReLU(0.1)
+
+    def forward(self, x):
+        out = self.relu1(self.bn1(self.conv1(x)))
+        return out
+
+
+class DarkNetFPN(nn.Module):
+    def __init__(self):
+        super(DarkNetFPN, self).__init__()
+        ...
+
+    def forward(self, x):
+        ...
+
+    def _make_layers(self, in_channels, out_channels):
+        layers = []
+
+
 @BACKBONE_REGISTRY.register()
-def build_darknet53_backbone(cfg):
-    backbone = DarkNet([1, 2, 8, 8, 4])
+def build_darknet53_backbone(cfg, input_shape):
+    stem = BasicStem(
+        in_channels=input_shape.channels,
+        out_channels=cfg.MODEL.DARKNET.STEM_OUT_CHANNELS,
+        norm=cfg.MODEL.DARKNET.NORM
+    )
+    backbone = DarkNet(stem, [1, 2, 8, 8, 4])
     return backbone

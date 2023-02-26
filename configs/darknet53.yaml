@@ -1,20 +1,24 @@
 MODEL:
+  DEVICE: "cpu"
   META_ARCHITECTURE: "YoloV3"
   BACKBONE:
     NAME: "build_darknet53_backbone"
   DARKNET:
+    STEM_OUT_CHANNELS: 32
+    NORM: "BN"
     OUT_FEATURES: [ "d3", "d4", "d5" ]
   FPN:
-    NAME: "build_fpn"
-
-  YOLO:
+    NAME: "build_darknet_fpn"
 
 
-DATASETS:
-  TRAIN:
-  TEST:
+#  YOLO:
 
-SOLVER:
+
+#DATASETS:
+#  TRAIN:
+#  TEST:
+#
+#SOLVER:
 
 INPUT:
   MIN_SIZE_TRAIN: (416,)
