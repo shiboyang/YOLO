@@ -14,7 +14,12 @@ from detectron2.modeling.backbone import build_backbone
 @META_ARCH_REGISTRY.register()
 class YoloV3(nn.Module):
     @configurable
-    def __init__(self, *, backbone, out_features: List[str]):
+    def __init__(
+            self,
+            *,
+            backbone,
+            out_features: List[str]
+    ):
         super(YoloV3, self).__init__()
         self.backbone = backbone
         self._out_features = out_features
@@ -22,7 +27,9 @@ class YoloV3(nn.Module):
     @classmethod
     def from_config(cls, cfg):
         backbone = build_backbone(cfg)
-        out_features = cfg.MODEL.DARKNET.OUT_FEATURES
+        backbone_shape = backbone.output_shape()
+
+        out_features = cfg.MODEL.DARKNET_FPN.OUT_FEATURES
 
         return {
             "backbone": backbone,

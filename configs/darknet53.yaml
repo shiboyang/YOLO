@@ -11,10 +11,14 @@ MODEL:
     NAME: "build_darknet_fpn"
     IN_FEATURES: [ "d3", "d4", "d5" ]
     OUT_FEATURES: [ "p3", "p4", "p5" ]
-    OUT_CHANNELS: [ 128,256,512 ]
+    OUT_CHANNELS: [ 128, 256, 512 ]
     NORM: "BN"
+#  ANCHOR_GENERATOR:
+#    SIZES: [ ]
+#    ASPECT_RATIOS: [ ]
+  YOLO:
+    IN_FEATURES: [ "p3", "p4", "p5" ]
 
-#  YOLO:
 
 
 #DATASETS:

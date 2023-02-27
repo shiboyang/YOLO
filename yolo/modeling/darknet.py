@@ -10,10 +10,12 @@ import torch.nn.functional as F
 from typing import List
 from collections import OrderedDict
 
-from detectron2.layers import get_norm, Conv2d
+from detectron2.layers import get_norm, Conv2d, ShapeSpec
 
 from detectron2.modeling.backbone import BACKBONE_REGISTRY, Backbone
 from detectron2.layers.blocks import CNNBlockBase
+
+__all__ = ["DarkNet", "DarkNetFPN"]
 
 
 class DarkNet(Backbone):
@@ -149,9 +151,9 @@ class BasicStem(CNNBlockBase):
 class DarkNetFPN(Backbone):
     def __init__(
             self,
+            *,
             bottom_up,
             in_features,
-            out_features,
             out_channels,
             num_classes,
             num_anchors,
@@ -160,6 +162,7 @@ class DarkNetFPN(Backbone):
         super(DarkNetFPN, self).__init__()
         input_shapes = bottom_up.output_shape()
         in_channels_per_feature = [input_shapes[f].channels for f in in_features]
+        self.head_out_channels = (num_classes + 5) * num_anchors
         lateral_convs = []
         output_convs = []
         head_convs = []
@@ -168,7 +171,7 @@ class DarkNetFPN(Backbone):
             if idx + 1 < len(in_channels_per_feature):
                 in_channels += in_channels // 2  # todo ???
             lateral_conv, out_conv = self._make_lateral_conv_output_conv(in_channels, out_channels[idx], norm)
-            head_conv = self._make_head_conv(out_channels[idx], (num_classes + 5) * num_anchors, norm)
+            head_conv = self._make_head_conv(out_channels[idx], self.head_out_channels, norm)
 
             # todo weight init
 
@@ -186,7 +189,7 @@ class DarkNetFPN(Backbone):
         self.head_convs = head_convs[::-1]
 
         self.in_features = in_features
-        self.out_features = out_features
+        self.out_features = ["p3", "p4", "p5"]
         self.bottom_up = bottom_up
 
     def forward(self, x):
@@ -278,6 +281,15 @@ class DarkNetFPN(Backbone):
         )
         return lateral_conv, out_conv
 
+    def output_shape(self):
+        return {
+            name: ShapeSpec(
+                channels=head[-1].channels,
+                height=head[-1].
+            )
+            for name, head in zip(self.out_features, self.head_convs)
+        }
+
 
 @BACKBONE_REGISTRY.register()
 def build_darknet53_backbone(cfg, input_shape):
@@ -304,6 +316,6 @@ def build_darknet53_fpn_backbone(cfg, input_shape):
         out_channels=out_channels,
         num_classes=num_classes,
         num_anchors=num_anchors,
-        norm=norm
+        norm=norm,
     )
     return backbone
