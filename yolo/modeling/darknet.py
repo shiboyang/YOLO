@@ -3,12 +3,14 @@
 # @Site    : 
 # @File    : darknet.py
 # @Software: PyCharm
-
+import numpy as np
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import List
 from collections import OrderedDict
 
-from detectron2.layers import get_norm
+from detectron2.layers import get_norm, Conv2d
 
 from detectron2.modeling.backbone import BACKBONE_REGISTRY, Backbone
 from detectron2.layers.blocks import CNNBlockBase
@@ -32,6 +34,14 @@ class DarkNet(Backbone):
         self.dark5 = self._make_dark(layers[4], [512, 1024])
 
         self._out_features = ("d1", "d2", "d3", "d4", "d5")
+
+        current_stride = self.stem.stride
+        self._out_feature_strides = {"stem": self.stem.stride}
+        self._out_feature_channels = {"stem": self.stem.out_channels}
+        for idx, blocks in enumerate([self.dark1, self.dark2, self.dark3, self.dark4, self.dark5]):
+            name = self._out_features[idx]
+            self._out_feature_strides[name] = current_stride = current_stride * np.prod([k.stride for k in blocks])
+            self._out_feature_channels[name] = blocks[-1].out_channels
 
     def forward(self, x):
         out = self.stem(x)
@@ -60,32 +70,37 @@ class DarkNet(Backbone):
         return nn.Sequential(OrderedDict(layers))
 
 
-class DownSample(nn.Module):
+class DownSample(CNNBlockBase):
 
-    def __init__(self, in_channel, out_channel):
-        super(DownSample, self).__init__()
-        self.conv = nn.Conv2d(in_channel, out_channels=out_channel, kernel_size=3, stride=2, padding=1,
-                              bias=False)
-
-        self.bn = nn.BatchNorm2d(out_channel, eps=1e-5, momentum=0.1)
+    def __init__(self, in_channels, out_channels, stride=2, norm="BN"):
+        super(DownSample, self).__init__(in_channels, out_channels, stride)
+        self.conv = Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            stride=stride,
+            padding=1,
+            bias=False,
+            norm=get_norm(norm, out_channels)
+        )
         self.relu = nn.LeakyReLU(0.1)
 
     def forward(self, x):
-        out = self.relu(self.bn(self.conv(x)))
+        out = self.relu(self.conv(x))
         return out
 
 
-class Residual(nn.Module):
-    def __init__(self, in_channel: int, out_channels: List[int]):
+class Residual(CNNBlockBase):
+    def __init__(self, in_channels: int, out_channels: List[int]):
         """
         Residual layer
-        :param in_channel: int
+        :param in_channels: int
         :param out_channels: lens=2 List[int]
         """
-        super(Residual, self).__init__()
-        assert in_channel == out_channels[-1]
+        super(Residual, self).__init__(in_channels, out_channels[-1], 1)
+        assert in_channels == out_channels[-1]
 
-        self.conv1 = nn.Conv2d(in_channel, out_channels[0], kernel_size=1, stride=1, padding=0, bias=False)
+        self.conv1 = nn.Conv2d(in_channels, out_channels[0], kernel_size=1, stride=1, padding=0, bias=False)
         self.bn1 = nn.BatchNorm2d(out_channels[0], eps=1e-5, momentum=0.1)
         self.relu1 = nn.LeakyReLU(0.1)
 
@@ -115,25 +130,153 @@ class BasicStem(CNNBlockBase):
 
     def __init__(self, in_channels, out_channels, norm="BN"):
         super(BasicStem, self).__init__(in_channels, out_channels, 1)
-        self.conv1 = nn.Conv2d(in_channels, self.out_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = get_norm(norm, self.out_channels)
+        self.conv1 = Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
+            norm=get_norm(norm, out_channels)
+        )
         self.relu1 = nn.LeakyReLU(0.1)
 
     def forward(self, x):
-        out = self.relu1(self.bn1(self.conv1(x)))
+        out = self.relu1(self.conv1(x))
         return out
 
 
-class DarkNetFPN(nn.Module):
-    def __init__(self):
+class DarkNetFPN(Backbone):
+    def __init__(
+            self,
+            bottom_up,
+            in_features,
+            out_features,
+            out_channels,
+            num_classes,
+            num_anchors,
+            norm="",
+    ):
         super(DarkNetFPN, self).__init__()
-        ...
+        input_shapes = bottom_up.output_shape()
+        in_channels_per_feature = [input_shapes[f].channels for f in in_features]
+        lateral_convs = []
+        output_convs = []
+        head_convs = []
+        for idx, in_channels in enumerate(in_channels_per_feature):
+            # !!!在d5上lateral_conv的in_channels没有concat的过程，因此不需要调整in_channels
+            if idx + 1 < len(in_channels_per_feature):
+                in_channels += in_channels // 2  # todo ???
+            lateral_conv, out_conv = self._make_lateral_conv_output_conv(in_channels, out_channels[idx], norm)
+            head_conv = self._make_head_conv(out_channels[idx], (num_classes + 5) * num_anchors, norm)
+
+            # todo weight init
+
+            self.add_module(f"fpn_lateral{idx}", lateral_conv)
+            self.add_module(f"fpn_output{idx}", out_conv)
+            self.add_module(f"fpn_head{idx}", head_conv)
+
+            lateral_convs.append(lateral_conv)
+            output_convs.append(out_conv)
+            head_convs.append(head_conv)
+
+        # reverser the order of convs
+        self.lateral_convs = lateral_convs[::-1]
+        self.output_convs = output_convs[::-1]
+        self.head_convs = head_convs[::-1]
+
+        self.in_features = in_features
+        self.out_features = out_features
+        self.bottom_up = bottom_up
 
     def forward(self, x):
-        ...
+        bottom_up_features = self.bottom_up(x)
+        result = []
 
-    def _make_layers(self, in_channels, out_channels):
+        prev_features = self.lateral_convs[0](bottom_up_features[self.in_features[-1]])
+        result.append(self.head_convs[0](prev_features))
+        prev_features = self.output_convs[0](prev_features)
+
+        for idx, (lateral_conv, output_conv, head_conv) in enumerate(
+                zip(self.lateral_convs, self.output_convs, self.head_convs)
+        ):
+            if idx > 0:
+                features = self.in_features[-idx - 1]
+                features = bottom_up_features[features]
+
+                top_down_features = F.interpolate(prev_features, scale_factor=2.0, mode="nearest")
+                lateral_features = torch.cat([top_down_features, features], dim=1)
+                prev_features = lateral_conv(lateral_features)
+                result.insert(0, head_conv(prev_features))
+
+                prev_features = output_conv(prev_features)
+
+        return {name: res for name, res in zip(self.out_features, result)}
+
+    def _make_head_conv(self, in_channels, out_channels, norm):
         layers = []
+        layers.append(
+            ("head_conv1", Conv2d(
+                in_channels=in_channels,
+                out_channels=in_channels * 2,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                norm=get_norm(norm, in_channels * 2)
+            ))
+        )
+        layers.append(
+            ("relu1", nn.LeakyReLU(0.1))
+        )
+        layers.append(
+            ("head", Conv2d(
+                in_channels=in_channels * 2,
+                out_channels=out_channels,
+                kernel_size=1,
+                stride=1,
+                padding=0
+            ))
+        )
+        return nn.Sequential(OrderedDict(layers))
+
+    def _make_lateral_conv_output_conv(self, in_channels, out_channels, norm):
+        use_bias = norm == ""
+        layers = []
+        out_channel_dict = {1: out_channels, 3: out_channels * 2}
+
+        for i in range(5):
+            k = 1 if i % 2 == 0 else 3
+            p = (k - 1) // 2
+            if i > 0:
+                in_channels = out_channels
+                out_channels = out_channel_dict[k]
+
+            layers.append(
+                (f"conv{i}", Conv2d(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=k,
+                    padding=p,
+                    stride=1,
+                    bias=use_bias,
+                    norm=get_norm(norm, out_channels)
+                ))
+            )
+            layers.append(
+                (f"relu{i}", nn.LeakyReLU(0.1))
+            )
+
+        lateral_conv = nn.Sequential(OrderedDict(layers))
+        out_conv = Conv2d(
+            in_channels=out_channels,
+            out_channels=out_channels // 2,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=use_bias,
+            norm=get_norm(norm, out_channels // 2)
+        )
+        return lateral_conv, out_conv
 
 
 @BACKBONE_REGISTRY.register()
@@ -144,4 +287,23 @@ def build_darknet53_backbone(cfg, input_shape):
         norm=cfg.MODEL.DARKNET.NORM
     )
     backbone = DarkNet(stem, [1, 2, 8, 8, 4])
+    return backbone
+
+
+@BACKBONE_REGISTRY.register()
+def build_darknet53_fpn_backbone(cfg, input_shape):
+    bottom_up = build_darknet53_backbone(cfg, input_shape)
+    in_features = cfg.MODEL.DARKNET_FPN.IN_FEATURES
+    out_channels = cfg.MODEL.DARKNET_FPN.OUT_CHANNELS
+    num_classes = 20  # todo
+    num_anchors = 3  # todo
+    norm = cfg.MODEL.DARKNET_FPN.NORM
+    backbone = DarkNetFPN(
+        bottom_up=bottom_up,
+        in_features=in_features,
+        out_channels=out_channels,
+        num_classes=num_classes,
+        num_anchors=num_anchors,
+        norm=norm
+    )
     return backbone

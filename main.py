@@ -36,7 +36,8 @@ def main():
     img = torch.from_numpy(img)
     img = img.permute(2, 0, 1).unsqueeze(0)
 
-    img = img.type(torch.float)
+    img = img.type(torch.float).to(cfg.MODEL.DEVICE)
+
     model(img)
 
 
