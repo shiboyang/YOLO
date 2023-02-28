@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from typing import List
 from collections import OrderedDict
 
-from detectron2.layers import get_norm, Conv2d
+from detectron2.layers import get_norm, Conv2d, ShapeSpec
 
 from detectron2.modeling.backbone import BACKBONE_REGISTRY, Backbone
 from detectron2.layers.blocks import CNNBlockBase
@@ -151,7 +151,6 @@ class DarkNetFPN(Backbone):
             self,
             bottom_up,
             in_features,
-            out_features,
             out_channels,
             num_classes,
             num_anchors,
@@ -160,6 +159,7 @@ class DarkNetFPN(Backbone):
         super(DarkNetFPN, self).__init__()
         input_shapes = bottom_up.output_shape()
         in_channels_per_feature = [input_shapes[f].channels for f in in_features]
+        self._head_out_channels = (num_classes + 5) * num_anchors
         lateral_convs = []
         output_convs = []
         head_convs = []
@@ -168,7 +168,7 @@ class DarkNetFPN(Backbone):
             if idx + 1 < len(in_channels_per_feature):
                 in_channels += in_channels // 2  # todo ???
             lateral_conv, out_conv = self._make_lateral_conv_output_conv(in_channels, out_channels[idx], norm)
-            head_conv = self._make_head_conv(out_channels[idx], (num_classes + 5) * num_anchors, norm)
+            head_conv = self._make_head_conv(out_channels[idx], self._head_out_channels, norm)
 
             # todo weight init
 
@@ -186,8 +186,12 @@ class DarkNetFPN(Backbone):
         self.head_convs = head_convs[::-1]
 
         self.in_features = in_features
-        self.out_features = out_features
+        self._out_features = ["p3", "p4", "p5"]
         self.bottom_up = bottom_up
+
+        # 用于output_shape支持
+        self._out_feature_channels = {k: input_shapes[f].channels for f, k in zip(self.in_features, self._out_features)}
+        self._out_feature_strides = {k: input_shapes[f].stride for f, k in zip(self.in_features, self._out_features)}
 
     def forward(self, x):
         bottom_up_features = self.bottom_up(x)
@@ -211,7 +215,7 @@ class DarkNetFPN(Backbone):
 
                 prev_features = output_conv(prev_features)
 
-        return {name: res for name, res in zip(self.out_features, result)}
+        return {name: res for name, res in zip(self._out_features, result)}
 
     def _make_head_conv(self, in_channels, out_channels, norm):
         layers = []
