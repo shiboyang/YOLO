@@ -159,7 +159,7 @@ class DarkNetFPN(Backbone):
         super(DarkNetFPN, self).__init__()
         input_shapes = bottom_up.output_shape()
         in_channels_per_feature = [input_shapes[f].channels for f in in_features]
-        self._head_out_channels = (num_classes + 4) * num_anchors
+        self._head_out_channels = (num_classes + 4 + 1) * num_anchors
         lateral_convs = []
         output_convs = []
         head_convs = []

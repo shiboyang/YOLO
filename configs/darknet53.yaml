@@ -14,11 +14,12 @@ MODEL:
     NORM: "BN"
   ANCHOR_GENERATOR:
     NAME: "YoloAnchorGenerator"
-    SIZES: [ [ [ 10,13 ],  [ 16,30 ],  [ 33,23 ] ],  [ [ 30,61 ],  [ 62,45 ],  [ 59,119 ] ],  [ [ 116,90 ],  [ 156,198 ],  [ 373,326 ] ] ]
-    ASPECT_RATIOS: [ 1 ]
+    SIZES: !!python/object/apply:eval [ "[[(w*h)**(1.0/2) for w,h in item] for item in [[[116,90],[156,198],[373,326]],[[30,61],[62,45],[59,119]],[[10,13],[16,30],[33,23]]]]" ]
+    ASPECT_RATIOS: !!python/object/apply:eval [ "[[h/w for w,h in item] for item in [[[116,90],[156,198],[373,326]],[[30,61],[62,45],[59,119]],[[10,13],[16,30],[33,23]]]]" ]
   YOLO:
     IN_FEATURES: [ "p3", "p4", "p5" ]
     NUM_CLASSES: 20
+
 DATASETS:
   TRAIN: ("coco_2017_val",)
 
@@ -26,12 +27,12 @@ DATASETS:
 DATALOADER:
   NUM_WORKERS: 0
 
-
 SOLVER:
   IMS_PER_BATCH: 1
   BASE_LR: 0.01  # Note that RetinaNet uses a different default learning rate
   STEPS: (60000, 80000)
   MAX_ITER: 90000
+
 INPUT:
-  MIN_SIZE_TRAIN: (416,)
+  MIN_SIZE_TRAIN: (640,)
 VERSION: 2
