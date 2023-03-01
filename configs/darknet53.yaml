@@ -13,19 +13,25 @@ MODEL:
     OUT_CHANNELS: [ 128, 256, 512 ]
     NORM: "BN"
   ANCHOR_GENERATOR:
-    SIZE: [ [ [ 10,13 ],  [ 16,30 ],  [ 33,23 ] ],  [ [ 30,61 ],  [ 62,45 ],  [ 59,119 ] ],  [ [ 116,90 ],  [ 156,198 ],  [ 373,326 ] ] ]
-  HEAD:
+    NAME: "YoloAnchorGenerator"
+    SIZES: [ [ [ 10,13 ],  [ 16,30 ],  [ 33,23 ] ],  [ [ 30,61 ],  [ 62,45 ],  [ 59,119 ] ],  [ [ 116,90 ],  [ 156,198 ],  [ 373,326 ] ] ]
+    ASPECT_RATIOS: [ 1 ]
+  YOLO:
     IN_FEATURES: [ "p3", "p4", "p5" ]
-#  YOLO:
+    NUM_CLASSES: 20
+DATASETS:
+  TRAIN: ("coco_2017_val",)
+
+# DEBUG
+DATALOADER:
+  NUM_WORKERS: 0
 
 
-#DATASETS:
-#  TRAIN:
-#  TEST:
-#
-#SOLVER:
-
+SOLVER:
+  IMS_PER_BATCH: 1
+  BASE_LR: 0.01  # Note that RetinaNet uses a different default learning rate
+  STEPS: (60000, 80000)
+  MAX_ITER: 90000
 INPUT:
   MIN_SIZE_TRAIN: (416,)
-
 VERSION: 2
