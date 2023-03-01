@@ -1,15 +1,14 @@
-# @Time    : 2023/2/24 下午5:00
+# @Time    : 2023/3/1 下午2:14
 # @Author  : Boyang
 # @Site    : 
-# @File    : main.py
+# @File    : train_net.py
 # @Software: PyCharm
-import torch
+import argparse
 
 from detectron2.config import get_cfg
-from detectron2.modeling import build_model
-import argparse
-import cv2
+from detectron2.engine import DefaultTrainer
 
+from tools.train_net import build_evaluator
 import yolo
 
 
@@ -22,23 +21,19 @@ def setup(args):
     return cfg
 
 
+class Trainer(DefaultTrainer):
+
+    @classmethod
+    def build_evaluator(cls, cfg, dataset_name, output_folder=None):
+        return build_evaluator(cfg, dataset_name, output_folder)
+
+
 def main():
     args = argparse.ArgumentParser().parse_args()
     args.config_file = "./configs/darknet53.yaml"
     cfg = setup(args)
-
-    model = build_model(cfg)
-    print(model)
-
-    img_path = r"./1.png"
-    img = cv2.imread(img_path)
-    img = cv2.resize(img, (416, 416))
-    img = torch.from_numpy(img)
-    img = img.permute(2, 0, 1).unsqueeze(0)
-
-    img = img.type(torch.float).to(cfg.MODEL.DEVICE)
-
-    model(img)
+    trainer = Trainer(cfg)
+    trainer.train()
 
 
 if __name__ == '__main__':
