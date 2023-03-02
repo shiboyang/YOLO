@@ -74,29 +74,70 @@ class YoloV3(DenseDetector):
         }
 
     def forward_training(self, images, features, predictions, gt_instances):
+        # DEBUG:
+        self.images = images
+
         pred_logits, pred_confs, pred_anchor_deltas, = self._transpose_dense_predictions(
             predictions, [self.num_classes, 1, 4]
         )
         anchors = self.anchor_generator(features)
-        # debug
-        visualize_image(images[0], anchors, self.pixel_mean, self.pixel_std)
+        # Debug
+        visualize_image(images[0], anchors, self.pixel_mean, self.pixel_std, separate_show=True)
 
         gt_labels, gt_boxes = self.label_anchors(anchors, gt_instances)
-
-        # debug
-        visualize_image(images[0], gt_boxes[0])
 
         backbone_shapes = [backbone_shape for backbone_shape in self.backbone.output_shape()]
         stride = [backbone_shapes[f].stride for f in self.head_in_features]
 
-        # return self.losses()
+        return self.losses(anchors, pred_logits, pred_confs, pred_anchor_deltas, gt_labels, gt_boxes)
 
     def losses(self, anchors, pred_logits, pred_confs, pred_anchor_deltas, gt_labels, gt_boxes):
         """
         计算三个loss: confidence_loss, logits_loss, anchor_deltas_loss
         """
+        gt_labels = torch.stack(gt_labels)  # [N, num_anchors]
+        positive_mask = gt_labels >= 0
 
-        return {}
+        # 计算confidence loss
+        confidence_target = torch.zeros_like(positive_mask)
+        confidence_target[gt_labels > 0 & gt_boxes < self.num_classes] = 1
+        confidence_loss = self._dense_confidence_loss(
+            pred_confs,
+            confidence_target,
+            gt_boxes > 0 & gt_boxes < self.num_classes,
+            gt_labels == self.num_classes
+        )
+
+        # 计算logit loss
+        target = F.one_hot(gt_labels[positive_mask], self.num_classes + 1)[:, :-1]
+        logits_loss = self._dense_logits_loss(
+            pred_logits[positive_mask],
+            target
+        )
+
+        return {
+            "confs_loss": confidence_loss,
+            "logits_loss": logits_loss
+        }
+
+    def _dense_confidence_loss(self, pred_confs, target, objectness_mask, noobjectness_mask):
+        objectness_loss = F.binary_cross_entropy(
+            pred_confs[objectness_mask],
+            target[objectness_mask],
+        )
+        noobjectness_loss = F.binary_cross_entropy(
+            pred_confs[noobjectness_mask],
+            target[noobjectness_mask]
+        )
+        confidence_loss = objectness_loss + noobjectness_loss
+        return confidence_loss
+
+    def _dense_logits_loss(self, pred_logits, target):
+        logits_loss = F.binary_cross_entropy(pred_logits, target)
+        return logits_loss
+
+    def _dense_box_regression_loss(self):
+        ...
 
     @torch.no_grad()
     def label_anchors(self, anchors: List[Boxes], gt_instances: List[Instances]):
@@ -110,6 +151,15 @@ class YoloV3(DenseDetector):
         for gt_per_image in gt_instances:
             match_quality_matrix = pairwise_iou(gt_per_image.gt_boxes, anchors)
             matched_gt_idx, anchor_labels = self.anchor_matcher(match_quality_matrix, anchors, gt_per_image.gt_boxes)
+            # Debug visualize matched anchors and gt_anchors
+            img = self.images[0].clone()
+            visualize_image(
+                img,
+                [gt_per_image.gt_boxes, Boxes(anchors.tensor[anchor_labels == 1])],
+                self.pixel_mean,
+                self.pixel_std,
+            )
+
             if len(gt_per_image) > 0:
                 matched_gt_boxes_i = gt_per_image.gt_boxes.tensor[matched_gt_idx]
                 gt_labels_i = gt_per_image.gt_classes[matched_gt_idx]

@@ -20,7 +20,7 @@ class Matcher:
         match_quality_matrix [K, H*W*A * num_feature_map]
         """
         assert match_quality_matrix.dim() == 2
-        matched_val, matches = match_quality_matrix.max(dim=1)
+        matched_val, _ = match_quality_matrix.max(dim=1)
         iou_mask = match_quality_matrix == matched_val[:, None]
 
         center_distance = self._calculate_l1_distance(gt_boxes, anchors)
@@ -33,8 +33,10 @@ class Matcher:
         mask = (iou_mask & distance_mask)  # [K, HWA*num_feature_map]
 
         gt_idx, anchor_idx = torch.nonzero(mask, as_tuple=True)
-        match_labels = matches.new_full((match_quality_matrix.shape[-1],), self.labels[self.negative_label_idx],
-                                        dtype=torch.int8)
+
+        matched_val, matches = match_quality_matrix.max(dim=0)
+        match_labels = torch.full(matches.size(), self.labels[self.negative_label_idx], dtype=torch.int8,
+                                  device=matches.device)
         match_labels[matched_val > self.threshold] = self.labels[self.ignore_label_idx]
         match_labels[anchor_idx] = self.labels[self.positive_label_idx]
 
