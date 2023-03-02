@@ -16,6 +16,10 @@ from detectron2.config import configurable
 from detectron2.modeling.backbone import build_backbone
 from detectron2.structures import Boxes, Instances, pairwise_iou
 from detectron2.modeling.meta_arch import DenseDetector
+import matplotlib.pyplot as plt
+
+from .matcher import Matcher
+from .utils import visualize_image
 
 
 @META_ARCH_REGISTRY.register()
@@ -58,7 +62,11 @@ class YoloV3(DenseDetector):
             "head": head,
             "anchor_generator": anchor_generator,
             "box2box_transform": ...,
-            "anchor_matcher": ...,
+            "anchor_matcher": Matcher(
+                threshold=cfg.MODEL.YOLO.IOU_THRESHOLD,
+                labels=cfg.MODEL.YOLO.IOU_LABELS,
+                allow_low_quality_matches=False
+            ),
             "num_classes": cfg.MODEL.YOLO.NUM_CLASSES,
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
             "pixel_std": cfg.MODEL.PIXEL_STD
@@ -70,22 +78,51 @@ class YoloV3(DenseDetector):
             predictions, [self.num_classes, 1, 4]
         )
         anchors = self.anchor_generator(features)
+        # debug
+        visualize_image(images[0], anchors, self.pixel_mean, self.pixel_std)
+
         gt_labels, gt_boxes = self.label_anchors(anchors, gt_instances)
 
+        # debug
+        visualize_image(images[0], gt_boxes[0])
 
-        return self.losses()
+        backbone_shapes = [backbone_shape for backbone_shape in self.backbone.output_shape()]
+        stride = [backbone_shapes[f].stride for f in self.head_in_features]
 
-    def losses(self):
-        ...
+        # return self.losses()
+
+    def losses(self, anchors, pred_logits, pred_confs, pred_anchor_deltas, gt_labels, gt_boxes):
+        """
+        计算三个loss: confidence_loss, logits_loss, anchor_deltas_loss
+        """
+
+        return {}
 
     @torch.no_grad()
     def label_anchors(self, anchors: List[Boxes], gt_instances: List[Instances]):
+        """
+        anchors: generate A anchor for each point on each feature map.
+        gt_instances: a list, one instance contain all gt instance on a image.
+        """
         anchors = Boxes.cat(anchors)
         gt_labels = []
         matched_gt_boxes = []
         for gt_per_image in gt_instances:
             match_quality_matrix = pairwise_iou(gt_per_image.gt_boxes, anchors)
-            self.anchor_matcher(match_quality_matrix)
+            matched_gt_idx, anchor_labels = self.anchor_matcher(match_quality_matrix, anchors, gt_per_image.gt_boxes)
+            if len(gt_per_image) > 0:
+                matched_gt_boxes_i = gt_per_image.gt_boxes.tensor[matched_gt_idx]
+                gt_labels_i = gt_per_image.gt_classes[matched_gt_idx]
+                gt_labels_i[anchor_labels == 0] = self.num_classes
+                gt_labels_i[anchor_labels == -1] = -1
+            else:
+                gt_labels_i = torch.zeros_like(anchors.tensor) + self.num_classes
+                matched_gt_boxes_i = torch.zeros_like(anchors.tensor)
+
+            gt_labels.append(gt_labels_i)
+            matched_gt_boxes.append(matched_gt_boxes_i)
+
+        return gt_labels, matched_gt_boxes
 
 
 class YoloV3Head(nn.Module):
@@ -106,8 +143,9 @@ class YoloV3Head(nn.Module):
         pred_confs = []
         pred_anchor_deltas = []
         pred_logits = []
-        N, _, H, W = features[0].shape
+
         for feature in features:
+            N, _, H, W = feature.shape
             feature = feature.view(feature.shape[0], -1, self.num_anchors, feature.shape[-2],
                                    feature.shape[-1])  # [B, 4+1+C, H, W]
             pred_anchor_delta = feature[:, :4].view(N, -1, H, W)

@@ -193,6 +193,10 @@ class DarkNetFPN(Backbone):
         self._out_feature_channels = {k: input_shapes[f].channels for f, k in zip(self.in_features, self._out_features)}
         self._out_feature_strides = {k: input_shapes[f].stride for f, k in zip(self.in_features, self._out_features)}
 
+    @property
+    def size_divisibility(self):
+        return 32
+
     def forward(self, x):
         bottom_up_features = self.bottom_up(x)
         result = []
@@ -215,7 +219,7 @@ class DarkNetFPN(Backbone):
 
                 prev_features = output_conv(prev_features)
 
-        return {name: res for name, res in zip(self._out_features[::-1], result)}
+        return {name: res for name, res in zip(self._out_features, result)}
 
     def _make_head_conv(self, in_channels, out_channels, norm):
         layers = []
@@ -299,8 +303,8 @@ def build_darknet53_fpn_backbone(cfg, input_shape):
     bottom_up = build_darknet53_backbone(cfg, input_shape)
     in_features = cfg.MODEL.DARKNET_FPN.IN_FEATURES
     out_channels = cfg.MODEL.DARKNET_FPN.OUT_CHANNELS
-    num_classes = 20  # todo
-    num_anchors = 3  # todo
+    num_classes = cfg.MODEL.YOLO.NUM_CLASSES
+    num_anchors = len(cfg.MODEL.ANCHOR_GENERATOR.SIZES)
     norm = cfg.MODEL.DARKNET_FPN.NORM
     backbone = DarkNetFPN(
         bottom_up=bottom_up,
