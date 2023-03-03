@@ -3,35 +3,41 @@
 # @Site    : 
 # @File    : darknet.py
 # @Software: PyCharm
+from __future__ import annotations
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List
 from collections import OrderedDict
+import fvcore.nn.weight_init as weight_init
 
-from detectron2.layers import get_norm, Conv2d, ShapeSpec
-
+from detectron2.layers import get_norm, Conv2d
 from detectron2.modeling.backbone import BACKBONE_REGISTRY, Backbone
 from detectron2.layers.blocks import CNNBlockBase
 
 
 class DarkNet(Backbone):
 
-    def __init__(self, stem, layers: List[int]):
+    def __init__(
+            self,
+            stem: BasicStem,
+            layers: List[int],
+            norm: str
+    ):
         super(DarkNet, self).__init__()
-        self.in_channel = 32
         self.stem = stem
+        self.in_channel = self.stem.out_channels
 
-        self.dark1 = self._make_dark(layers[0], [32, 64])
+        self.dark1 = self._make_dark_block(layers[0], [32, 64], norm)
 
-        self.dark2 = self._make_dark(layers[1], [64, 128])
+        self.dark2 = self._make_dark_block(layers[1], [64, 128], norm)
 
-        self.dark3 = self._make_dark(layers[2], [128, 256])
+        self.dark3 = self._make_dark_block(layers[2], [128, 256], norm)
 
-        self.dark4 = self._make_dark(layers[3], [256, 512])
+        self.dark4 = self._make_dark_block(layers[3], [256, 512], norm)
 
-        self.dark5 = self._make_dark(layers[4], [512, 1024])
+        self.dark5 = self._make_dark_block(layers[4], [512, 1024], norm)
 
         self._out_features = ("d1", "d2", "d3", "d4", "d5")
 
@@ -53,7 +59,7 @@ class DarkNet(Backbone):
 
         return {k: v for v, k in zip([res_dark1, res_dark2, res_dark3, res_dark4, res_dark5], self._out_features)}
 
-    def _make_dark(self, blocks: int, out_channels: List[int]):
+    def _make_dark_block(self, blocks: int, out_channels: List[int], norm: str):
         """
         DownSample(downsample_conv -> downsample_bn -> downsample_relu) -> Residual
         :param blocks: int
@@ -64,7 +70,7 @@ class DarkNet(Backbone):
         layers.append(("DownSample", DownSample(self.in_channel, out_channels[-1])))
         self.in_channel = out_channels[-1]
         for i in range(blocks):
-            residual = Residual(self.in_channel, out_channels)
+            residual = Residual(self.in_channel, out_channels, norm)
             layers.append((f"Residual{i}", residual))
 
         return nn.Sequential(OrderedDict(layers))
@@ -83,41 +89,55 @@ class DownSample(CNNBlockBase):
             bias=False,
             norm=get_norm(norm, out_channels)
         )
-        self.relu = nn.LeakyReLU(0.1)
+        weight_init.c2_msra_fill(self.conv)
 
     def forward(self, x):
-        out = self.relu(self.conv(x))
+        out = self.conv(x)
+        out = F.leaky_relu(out, 0.1)
         return out
 
 
 class Residual(CNNBlockBase):
-    def __init__(self, in_channels: int, out_channels: List[int]):
+    def __init__(self, in_channels: int, out_channels: List[int], norm: str):
         """
         Residual layer
+        一个残差单元包含 conv 1x1 --> conv 3x3 这个模块并不会改变feature_map的大小
         :param in_channels: int
         :param out_channels: lens=2 List[int]
         """
         super(Residual, self).__init__(in_channels, out_channels[-1], 1)
         assert in_channels == out_channels[-1]
 
-        self.conv1 = nn.Conv2d(in_channels, out_channels[0], kernel_size=1, stride=1, padding=0, bias=False)
-        self.bn1 = nn.BatchNorm2d(out_channels[0], eps=1e-5, momentum=0.1)
-        self.relu1 = nn.LeakyReLU(0.1)
-
-        self.conv2 = nn.Conv2d(out_channels[0], out_channels[1], kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(out_channels[1], eps=1e-5, momentum=0.1)
-        self.relu2 = nn.LeakyReLU(0.1)
+        use_bias = norm == ""
+        self.conv1 = Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels[0],
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=use_bias,
+            norm=get_norm(norm, out_channels[0])
+        )
+        self.conv2 = Conv2d(
+            in_channels=out_channels[0],
+            out_channels=out_channels[1],
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=use_bias,
+            norm=get_norm(norm, out_channels[1])
+        )
+        for layer in [self.conv1, self.conv2]:
+            weight_init.c2_msra_fill(layer)
 
     def forward(self, x):
         residual = x.clone()
 
         out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu1(out)
+        out = F.leaky_relu(out, 0.1)
 
         out = self.conv2(out)
-        out = self.bn2(out)
-        out = self.relu2(out)
+        out = F.leaky_relu(out, 0.1)
 
         out += residual
         return out
@@ -140,6 +160,8 @@ class BasicStem(CNNBlockBase):
             norm=get_norm(norm, out_channels)
         )
         self.relu1 = nn.LeakyReLU(0.1)
+
+        weight_init.c2_msra_fill(self.conv1)
 
     def forward(self, x):
         out = self.relu1(self.conv1(x))
@@ -164,13 +186,12 @@ class DarkNetFPN(Backbone):
         output_convs = []
         head_convs = []
         for idx, in_channels in enumerate(in_channels_per_feature):
+            # 循环p3 p4 p5 的in_channels 链接最后一层的conv的通道数是没有融合过程的
             # !!!在d5上lateral_conv的in_channels没有concat的过程，因此不需要调整in_channels
             if idx + 1 < len(in_channels_per_feature):
-                in_channels += in_channels // 2  # todo ???
+                in_channels += in_channels // 2  # concat layer,通过concat方式将两层融合,网络中规定上一层的通道数为这一层的1/2
             lateral_conv, out_conv = self._make_lateral_conv_output_conv(in_channels, out_channels[idx], norm)
             head_conv = self._make_head_conv(out_channels[idx], self._head_out_channels, norm)
-
-            # todo weight init
 
             self.add_module(f"fpn_lateral{idx}", lateral_conv)
             self.add_module(f"fpn_output{idx}", out_conv)
@@ -245,6 +266,10 @@ class DarkNetFPN(Backbone):
                 padding=0
             ))
         )
+        for layer in layers:
+            if isinstance(layer, nn.Conv2d):
+                weight_init.c2_msra_fill(layer)
+
         return nn.Sequential(OrderedDict(layers))
 
     def _make_lateral_conv_output_conv(self, in_channels, out_channels, norm):
@@ -258,21 +283,18 @@ class DarkNetFPN(Backbone):
             if i > 0:
                 in_channels = out_channels
                 out_channels = out_channel_dict[k]
-
-            layers.append(
-                (f"conv{i}", Conv2d(
-                    in_channels=in_channels,
-                    out_channels=out_channels,
-                    kernel_size=k,
-                    padding=p,
-                    stride=1,
-                    bias=use_bias,
-                    norm=get_norm(norm, out_channels)
-                ))
+            conv = Conv2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=k,
+                padding=p,
+                stride=1,
+                bias=use_bias,
+                norm=get_norm(norm, out_channels)
             )
-            layers.append(
-                (f"relu{i}", nn.LeakyReLU(0.1))
-            )
+            weight_init.c2_msra_fill(conv)
+            layers.append((f"conv{i}", conv))
+            layers.append((f"relu{i}", nn.LeakyReLU(0.1)))
 
         lateral_conv = nn.Sequential(OrderedDict(layers))
         out_conv = Conv2d(
@@ -284,6 +306,7 @@ class DarkNetFPN(Backbone):
             bias=use_bias,
             norm=get_norm(norm, out_channels // 2)
         )
+        weight_init.c2_msra_fill(out_conv)
         return lateral_conv, out_conv
 
 
@@ -294,7 +317,11 @@ def build_darknet53_backbone(cfg, input_shape):
         out_channels=cfg.MODEL.DARKNET.STEM_OUT_CHANNELS,
         norm=cfg.MODEL.DARKNET.NORM
     )
-    backbone = DarkNet(stem, [1, 2, 8, 8, 4])
+    backbone = DarkNet(
+        stem,
+        [1, 2, 8, 8, 4],
+        norm=cfg.MODEL.DARKNET.NORM
+    )
     return backbone
 
 

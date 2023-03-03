@@ -43,7 +43,6 @@ class Matcher:
         matches[anchor_idx] = gt_idx
 
         if self.allow_low_quality_matches:
-            # todo
             raise NotImplementedError
 
         return matches, match_labels
