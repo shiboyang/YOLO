@@ -4,5 +4,5 @@
 # @File    : __init__.py.py
 # @Software: PyCharm
 from .yolo import YoloV3
-from .darknet import build_darknet53_backbone
 from . import anchor_generator
+from .backbone import build_darknet53_backbone
