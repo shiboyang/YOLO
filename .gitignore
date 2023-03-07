@@ -1,3 +1,4 @@
 idea/
 datasets/
 /output/
+/configs/yolov3.weights

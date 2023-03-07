@@ -183,72 +183,10 @@ class DarkNetFPN(Backbone):
 
         return dict(zip(self._out_features, result))
 
-    # def _make_head_conv(self, in_channels, out_channels, norm):
-    #     layers = []
-    #     layers.append(
-    #         ("head_conv1", Conv2d(
-    #             in_channels=in_channels,
-    #             out_channels=in_channels * 2,
-    #             kernel_size=3,
-    #             stride=1,
-    #             padding=1,
-    #             norm=get_norm(norm, in_channels * 2)
-    #         ))
-    #     )
-    #     layers.append(
-    #         ("relu1", nn.LeakyReLU(0.1))
-    #     )
-    #     layers.append(
-    #         ("head", Conv2d(
-    #             in_channels=in_channels * 2,
-    #             out_channels=out_channels,
-    #             kernel_size=1,
-    #             stride=1,
-    #             padding=0
-    #         ))
-    #     )
-    #     for layer in layers:
-    #         if isinstance(layer, nn.Conv2d):
-    #             weight_init.c2_msra_fill(layer)
-    #
-    #     return nn.Sequential(OrderedDict(layers))
-    #
-    # def _make_lateral_conv_output_conv(self, in_channels, out_channels, norm):
-    #     use_bias = norm == ""
-    #     layers = []
-    #     out_channel_dict = {1: out_channels, 3: out_channels * 2}
-    #
-    #     for i in range(5):
-    #         k = 1 if i % 2 == 0 else 3
-    #         p = (k - 1) // 2
-    #         if i > 0:
-    #             in_channels = out_channels
-    #             out_channels = out_channel_dict[k]
-    #         conv = Conv2d(
-    #             in_channels=in_channels,
-    #             out_channels=out_channels,
-    #             kernel_size=k,
-    #             padding=p,
-    #             stride=1,
-    #             bias=use_bias,
-    #             norm=get_norm(norm, out_channels)
-    #         )
-    #         weight_init.c2_msra_fill(conv)
-    #         layers.append((f"conv{i}", conv))
-    #         layers.append((f"relu{i}", nn.LeakyReLU(0.1)))
-    #
-    #     lateral_conv = nn.Sequential(OrderedDict(layers))
-    #     out_conv = Conv2d(
-    #         in_channels=out_channels,
-    #         out_channels=out_channels // 2,
-    #         kernel_size=1,
-    #         stride=1,
-    #         padding=0,
-    #         bias=use_bias,
-    #         norm=get_norm(norm, out_channels // 2)
-    #     )
-    #     weight_init.c2_msra_fill(out_conv)
-    #     return lateral_conv, out_conv
+    def darknet_modules(self):
+        for name, conv in self.named_modules():
+            if isinstance(conv, Conv2d):
+                yield name, conv
 
 
 @BACKBONE_REGISTRY.register()

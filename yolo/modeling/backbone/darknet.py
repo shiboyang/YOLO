@@ -75,6 +75,11 @@ class DarkNet(Backbone):
 
         return nn.Sequential(OrderedDict(layers))
 
+    def darknet_modules(self):
+        for name, conv in self.modules():
+            if isinstance(conv, Conv2d):
+                yield name, conv
+
 
 class DownSample(CNNBlockBase):
 

@@ -4,17 +4,17 @@
 # @File    : yolo.py
 # @Software: PyCharm
 import os
-from typing import List
+from typing import List, Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
 import torch.nn.functional as F
 
-from detectron2.layers import ShapeSpec
+from detectron2.layers import ShapeSpec, batched_nms
 from detectron2.modeling import META_ARCH_REGISTRY, build_anchor_generator
 from detectron2.config import configurable
 from detectron2.modeling.backbone import build_backbone
-from detectron2.structures import Boxes, Instances, pairwise_iou
+from detectron2.structures import Boxes, Instances, pairwise_iou, ImageList
 from detectron2.modeling.meta_arch import DenseDetector
 from detectron2.utils.events import get_event_storage
 from .box_regression import Box2BoxTransform
@@ -77,6 +77,7 @@ class YoloV3(DenseDetector):
         }
 
     def forward_training(self, images, features, predictions, gt_instances):
+        # del images
         # DEBUG:
         if os.environ.get("DEBUG"):
             self.images = images
@@ -91,10 +92,13 @@ class YoloV3(DenseDetector):
 
         gt_labels, gt_boxes = self.label_anchors(anchors, gt_instances)
 
+        return self.losses(anchors, pred_logits, pred_confs, pred_anchor_deltas, gt_labels, gt_boxes,
+                           self._get_strides())
+
+    def _get_strides(self):
         backbone_shapes = self.backbone.output_shape()
         strides = [backbone_shapes[f].stride for f in self.head_in_features]
-
-        return self.losses(anchors, pred_logits, pred_confs, pred_anchor_deltas, gt_labels, gt_boxes, strides)
+        return strides
 
     def losses(self, anchors: List[Boxes], pred_logits, pred_confs, pred_anchor_deltas, gt_labels, gt_boxes, strides):
         """
@@ -134,7 +138,7 @@ class YoloV3(DenseDetector):
         # 计算regression loss
         strides = torch.tensor(strides, device=self.device)
         strides = strides.repeat_interleave(
-            torch.tensor([deltas.shape[0] * deltas.shape[1] for deltas in pred_anchor_deltas], device=self.device)
+            torch.tensor([deltas.shape[1] for deltas in pred_anchor_deltas], device=self.device)
         )
         pred_anchor_deltas = torch.cat(pred_anchor_deltas, dim=1)
         regression_loss = self._dense_box_regression_loss(
@@ -214,6 +218,94 @@ class YoloV3(DenseDetector):
             matched_gt_boxes.append(matched_gt_boxes_i)
 
         return gt_labels, matched_gt_boxes
+
+    def forward_inference(self, images: ImageList, features: List[Tensor], predictions: List[List[Tensor]]):
+        """
+        模型评估函数，在test阶段DenseDetector.forward会调用此函数
+        Return bounding-box detected results by thresholding on scores and applying non-maximum suppression
+        """
+        pred_logits, pred_confs, pred_anchor_deltas = self._transpose_dense_predictions(
+            predictions, [self.num_classes, 1, 4]
+        )
+        anchors = self.anchor_generator(features)
+        results: List[Instances] = []
+        for img_idx, image_size in enumerate(images.image_sizes):
+            logits_per_image = [x[img_idx] for x in pred_logits]
+            confs_per_image = [x[img_idx] for x in pred_confs]
+            deltas_per_image = [x[img_idx] for x in pred_anchor_deltas]
+            results_per_image = self.inference_single_image(
+                anchors, logits_per_image, confs_per_image, deltas_per_image, image_size
+            )
+            results.append(results_per_image)
+
+        return results
+
+    def inference_single_image(
+            self,
+            anchors,
+            logits,
+            confidences,
+            deltas,
+            image_size
+    ):
+        """
+
+        """
+        pred = self.__decode_multi_level_predictions(
+            anchors=anchors,
+            pred_logits=logits,
+            pred_confs=confidences,
+            pred_deltas=deltas,
+            score_thresh=self.test_score_thresh,
+            topk_candidates=self.test_topk_condidates,
+            image_size=image_size
+        )
+
+        keep = batched_nms(pred.pred_boxes.tensor, pred.scores, pred.pred_classes, self.test_nms_thresh)
+
+        return pred[keep[:self.max_detections_pre_image]]
+
+    def __decode_multi_level_predictions(
+            self,
+            anchors: List[Boxes],
+            pred_logits: List[Tensor],
+            pred_confs: List[Tensor],
+            pred_deltas: List[Tensor],
+            score_thresh: float,
+            topk_candidates: int,
+            image_size: Tuple[int, int],
+    ) -> Instances:
+        predictions: List[Instances] = []
+        strides = self._get_strides()
+        for box_cls_i, box_reg_i, confs_i, anchors_i, stride_i in zip(pred_logits, pred_deltas, pred_confs, anchors,
+                                                                      strides):
+            predictions.append(
+                self.__decode_per_level_predictions(
+                    anchors=anchors_i,
+                    pred_scores=box_cls_i,
+                    pred_confs=confs_i,
+                    pred_deltas=box_reg_i,
+                    score_thresh=score_thresh,
+                    topk_candidates=topk_candidates,
+                    image_size=image_size,
+                    stride=stride_i
+                )
+            )
+
+        return predictions[0].cat(predictions)
+
+    def __decode_per_level_predictions(
+            self,
+            anchors: Boxes,
+            pred_scores: Tensor,
+            pred_confs: Tensor,
+            pred_deltas: Tensor,
+            score_thresh: float,
+            topk_candidates: int,
+            image_size: Tuple[int, int],
+            stride: int
+    ) -> Instances:
+
 
 
 class YoloV3Head(nn.Module):
