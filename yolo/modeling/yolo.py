@@ -17,8 +17,8 @@ from detectron2.modeling.backbone import build_backbone
 from detectron2.structures import Boxes, Instances, pairwise_iou, ImageList
 from detectron2.modeling.meta_arch import DenseDetector
 from detectron2.utils.events import get_event_storage
-from .box_regression import Box2BoxTransform
 
+from .box_regression import Box2BoxTransform
 from .matcher import Matcher
 from .utils import visualize_image
 
@@ -39,8 +39,14 @@ class YoloV3(DenseDetector):
             box2box_transform: Box2BoxTransform,
             anchor_matcher: Matcher,
             num_classes,
+            # loss parameters
+            # ...
+            test_score_thresh=0.05,
+            test_topk_candidates=1000,
+            test_nms_thresh=0.5,
+            max_detections_per_image=100,
             pixel_mean,
-            pixel_std
+            pixel_std,
     ):
         super(YoloV3, self).__init__(backbone, head, in_features, pixel_std=pixel_std, pixel_mean=pixel_mean)
         self.backbone = backbone
@@ -49,6 +55,12 @@ class YoloV3(DenseDetector):
         self.box2box_transform = box2box_transform
         self.anchor_matcher = anchor_matcher
         self.num_classes = num_classes
+
+        # inference parameters
+        self.test_score_thresh = test_score_thresh
+        self.test_topk_candidates = test_topk_candidates
+        self.test_nms_thresh = test_nms_thresh
+        self.max_detections_pre_image = max_detections_per_image
 
     @classmethod
     def from_config(cls, cfg):
@@ -72,8 +84,7 @@ class YoloV3(DenseDetector):
             ),
             "num_classes": cfg.MODEL.YOLO.NUM_CLASSES,
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
-            "pixel_std": cfg.MODEL.PIXEL_STD
-            # LOSS PARAMETER
+            "pixel_std": cfg.MODEL.PIXEL_STD,
         }
 
     def forward_training(self, images, features, predictions, gt_instances):
@@ -223,6 +234,11 @@ class YoloV3(DenseDetector):
         """
         模型评估函数，在test阶段DenseDetector.forward会调用此函数
         Return bounding-box detected results by thresholding on scores and applying non-maximum suppression
+        Arguments:
+            images:
+            features
+            predictions:
+
         """
         pred_logits, pred_confs, pred_anchor_deltas = self._transpose_dense_predictions(
             predictions, [self.num_classes, 1, 4]
@@ -240,14 +256,7 @@ class YoloV3(DenseDetector):
 
         return results
 
-    def inference_single_image(
-            self,
-            anchors,
-            logits,
-            confidences,
-            deltas,
-            image_size
-    ):
+    def inference_single_image(self, anchors, logits, confidences, deltas, image_size):
         """
 
         """
@@ -257,7 +266,7 @@ class YoloV3(DenseDetector):
             pred_confs=confidences,
             pred_deltas=deltas,
             score_thresh=self.test_score_thresh,
-            topk_candidates=self.test_topk_condidates,
+            topk_candidates=self.test_topk_candidates,
             image_size=image_size
         )
 
@@ -277,6 +286,8 @@ class YoloV3(DenseDetector):
     ) -> Instances:
         predictions: List[Instances] = []
         strides = self._get_strides()
+        assert len(strides) == len(anchors)
+
         for box_cls_i, box_reg_i, confs_i, anchors_i, stride_i in zip(pred_logits, pred_deltas, pred_confs, anchors,
                                                                       strides):
             predictions.append(
@@ -305,7 +316,30 @@ class YoloV3(DenseDetector):
             image_size: Tuple[int, int],
             stride: int
     ) -> Instances:
+        """
+        在一个feature map上计算每一个点的 分类 回归 和 置信度
+        """
+        pred_scores = pred_scores * pred_confs
+        # 在每个点计算最大的得分和类别
+        pred_scores, pred_cls = pred_scores.max(dim=0)
 
+        # Apply tow filtering to make NMS faster
+        # 根据score_threshold过滤用于计算的点
+        scores_mask = pred_scores > score_thresh
+        pred_scores = pred_scores[scores_mask]
+        topk_idxs = torch.nonzero(scores_mask).view(-1)
+
+        # 再次通过topk个点过滤
+        num_topk = min(topk_candidates, pred_scores.size(0))
+        pred_scores, idxs = pred_scores.topk(num_topk)
+        topk_idxs = topk_idxs[idxs]
+        pred_cls = pred_cls[topk_idxs]
+
+        pred_boxes = self.box2box_transform.apply_deltas(pred_deltas[topk_idxs], anchors.tensor[topk_idxs], stride)
+
+        return Instances(
+            image_size=image_size, pred_boxes=Boxes(pred_boxes), scores=pred_scores, pred_classes=pred_cls
+        )
 
 
 class YoloV3Head(nn.Module):

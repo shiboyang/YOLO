@@ -41,6 +41,24 @@ class Box2BoxTransform:
 
         return deltas
 
-    def apply_deltas(self, deltas, boxes):
-        # todo scale_clamp
-        pass
+    def apply_deltas(self, deltas: torch.Tensor, boxes: torch.Tensor, stride: int):
+        """
+        Apply the deltas to boxes on one feature map.
+        """
+        boxes = boxes.to(deltas.dtype)
+
+        boxes_wh = boxes[..., 2:] - boxes[..., :2]
+        boxes_cxy = boxes[..., 2:] + boxes_wh / 2
+        target_cxy = (deltas[..., :2] + boxes_cxy) * stride
+        target_wh = boxes_wh * deltas[..., 2:].exp()
+
+        wx, wy, ww, wh = self.weights
+        cx = target_cxy[:, 0] / wx
+        cy = target_cxy[:, 1] / wy
+        w = target_wh[:, 0] / ww
+        h = target_wh[:, 1] / wh
+
+        x0, y0, x1, y1 = cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
+        target = torch.stack([x0, y0, x1, y1], dim=-1)
+
+        return target
