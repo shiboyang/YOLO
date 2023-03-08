@@ -26,10 +26,10 @@ class Box2BoxTransform:
         anchors = Boxes.cat(anchors).tensor
         anchors_wh = anchors[..., 2:] - anchors[..., :2]
 
-        gt_delta_cxy = gt_cxy / strides[..., None]
-        delta_cxy = gt_delta_cxy - torch.floor(gt_delta_cxy) - 0.5
+        gt_cxy = gt_cxy / strides[..., None]
+        delta_cxy = gt_cxy - torch.floor(gt_cxy) - 0.5
 
-        delta_wh = torch.log(gt_wh / anchors_wh)
+        delta_wh = torch.log(gt_wh / anchors_wh[None, :, :])
 
         wx, wy, ww, wh = self.weights
         dx = wx * delta_cxy[..., 0]

@@ -125,13 +125,13 @@ class YoloV3(DenseDetector):
 
         num_positive_anchors = positive_mask.sum().item()
         get_event_storage().put_scalar("num_pos_anchors", num_positive_anchors / num_images)
-        normalizer = self._ema_update("loss_normalizer", max(num_positive_anchors, 1), 100)
+        # normalizer = self._ema_update("loss_normalizer", max(num_positive_anchors, 1), 100)
 
         # 计算confidence loss
         pred_confs = torch.cat(pred_confs, dim=1)
         confidence_target = torch.zeros_like(pred_confs)
         confidence_target[positive_mask] = 1
-        confidence_loss = self._dense_confidence_loss(
+        confidence_loss = self._compute_confidence_loss(
             pred_confs,
             confidence_target,
             positive_mask,
@@ -141,7 +141,7 @@ class YoloV3(DenseDetector):
         # 计算logits loss
         pred_logits = torch.cat(pred_logits, dim=1)
         target = F.one_hot(gt_labels[positive_mask], self.num_classes + 1)[:, :-1].to(pred_logits.dtype)
-        logits_loss = self._dense_logits_loss(
+        logits_loss = self._compute_logits_loss(
             pred_logits[positive_mask],
             target
         )
@@ -152,7 +152,7 @@ class YoloV3(DenseDetector):
             torch.tensor([deltas.shape[1] for deltas in pred_anchor_deltas], device=self.device)
         )
         pred_anchor_deltas = torch.cat(pred_anchor_deltas, dim=1)
-        regression_loss = self._dense_box_regression_loss(
+        regression_loss = self._compute_box_regression_loss(
             pred_anchor_deltas,
             gt_boxes,
             anchors,
@@ -161,12 +161,12 @@ class YoloV3(DenseDetector):
         )
 
         return {
-            "confs_loss": confidence_loss / valid_mask.sum().item(),
-            "logits_loss": logits_loss / normalizer,
-            "regression_loss": regression_loss / normalizer
+            "confs_loss": confidence_loss,
+            "logits_loss": logits_loss,
+            "regression_loss": regression_loss
         }
 
-    def _dense_box_regression_loss(self, pred_anchor_deltas, gt_boxes, anchors, positive_mask, strides):
+    def _compute_box_regression_loss(self, pred_anchor_deltas, gt_boxes, anchors, positive_mask, strides):
         target = self.box2box_transform.get_deltas(gt_boxes, anchors, strides)
         regression_loss = F.smooth_l1_loss(
             pred_anchor_deltas[positive_mask],
@@ -176,7 +176,7 @@ class YoloV3(DenseDetector):
 
         return regression_loss
 
-    def _dense_confidence_loss(self, pred_confs, target, objectness_mask, noobjectness_mask):
+    def _compute_confidence_loss(self, pred_confs, target, objectness_mask, noobjectness_mask):
         objectness_loss = F.binary_cross_entropy(
             pred_confs[objectness_mask],
             target[objectness_mask],
@@ -190,7 +190,7 @@ class YoloV3(DenseDetector):
         confidence_loss = objectness_loss + noobjectness_loss
         return confidence_loss
 
-    def _dense_logits_loss(self, pred_logits, target):
+    def _compute_logits_loss(self, pred_logits, target):
         logits_loss = F.binary_cross_entropy(pred_logits, target, reduction="sum")
         return logits_loss
 
@@ -319,9 +319,10 @@ class YoloV3(DenseDetector):
         """
         在一个feature map上计算每一个点的 分类 回归 和 置信度
         """
+        # P(cls)  = P(cls) * P(cls|obj)
         pred_scores = pred_scores * pred_confs
         # 在每个点计算最大的得分和类别
-        pred_scores, pred_cls = pred_scores.max(dim=0)
+        pred_scores, pred_cls = pred_scores.max(dim=1)
 
         # Apply tow filtering to make NMS faster
         # 根据score_threshold过滤用于计算的点
@@ -368,20 +369,20 @@ class YoloV3Head(nn.Module):
 
         for feature in features:
             N, _, H, W = feature.shape
-            feature = feature.view(feature.shape[0], -1, self.num_anchors, feature.shape[-2],
-                                   feature.shape[-1])  # [B, 4+1+C, H, W]
-            pred_anchor_delta = feature[:, :4].view(N, -1, H, W)  # [B, 4, H, W]
-            delta_cxy = torch.sigmoid(pred_anchor_delta[:, :2]) - 0.5
-            pred_anchor_delta[:, :2] = delta_cxy
+            feature = feature.view(N, self.num_anchors, -1, H, W)  # [B, A, 4+1+C, H, W]
 
-            pred_conf = feature[:, 4:5].view(N, -1, H, W)
-            pred_conf = torch.sigmoid(pred_conf)
+            delta_i = feature[:, :, :4].reshape(N, -1, H, W)
+            confs_i = feature[:, :, 4:5].reshape(N, -1, H, W)
+            logits_i = feature[:, :, 5:].reshape(N, -1, H, W)
+            #
+            delta_i[:, 0::4] = torch.sigmoid(delta_i[:, 0::4]) - 0.5
+            delta_i[:, 1::4] = torch.sigmoid(delta_i[:, 1::4]) - 0.5
 
-            pred_logit = feature[:, 5:].view(N, -1, H, W)
-            pred_logit = torch.sigmoid(pred_logit)
+            confs_i = torch.sigmoid(confs_i)
+            logits_i = torch.sigmoid(logits_i)
 
-            pred_anchor_deltas.append(pred_anchor_delta)  # [B, 4*A, H, W]
-            pred_confs.append(pred_conf)  # [B, 1*A, H, W]
-            pred_logits.append(pred_logit)  # [B, C*A, H, W]
+            pred_anchor_deltas.append(delta_i)  # [B, A*4, H, W]
+            pred_confs.append(confs_i)  # [B, A*1, H, W]
+            pred_logits.append(logits_i)  # [B, A*C, H, W]
 
         return pred_logits, pred_confs, pred_anchor_deltas
