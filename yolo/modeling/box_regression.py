@@ -29,7 +29,7 @@ class Box2BoxTransform:
         gt_cxy = gt_cxy / strides[..., None]
         delta_cxy = gt_cxy - torch.floor(gt_cxy) - 0.5
 
-        delta_wh = torch.log(gt_wh / anchors_wh[None, :, :])
+        delta_wh = torch.log(gt_wh / anchors_wh[None, :, :] + 1e-16)
 
         wx, wy, ww, wh = self.weights
         dx = wx * delta_cxy[..., 0]
