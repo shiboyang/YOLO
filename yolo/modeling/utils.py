@@ -12,6 +12,20 @@ from typing import Optional, List
 import numpy as np
 
 
+def pairwise_iou_with_wh(box1_wh: Tensor, box2_wh: Tensor):
+    """
+
+    """
+    min_w = torch.minimum(box1_wh[:, 0][:, None], box2_wh[:, 0][None, :])
+    min_h = torch.minimum(box1_wh[:, 1][:, None], box2_wh[:, 1][None, :])
+    inter_area = min_w * min_h
+    box1_area = box1_wh[:, 0] * box1_wh[:, 1]
+    box2_area = box2_wh[:, 0] * box2_wh[:, 1]
+    union_area = box1_area[:, None] + box2_area[None, :] - inter_area
+    iou = inter_area / union_area
+    return iou
+
+
 def tensor_to_image(tensor):
     img = tensor.clone()
     img = img + torch.tensor([103.530, 116.280, 123.675], device=img.device)[:, None, None]

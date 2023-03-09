@@ -20,7 +20,7 @@ from detectron2.utils.events import get_event_storage
 
 from .box_regression import Box2BoxTransform
 from .matcher import Matcher, Matcher2
-from .utils import visualize_image
+from .utils import visualize_image, draw_point, pairwise_iou_with_wh
 
 __all__ = ["YoloV3"]
 
@@ -102,6 +102,10 @@ class YoloV3(DenseDetector):
             visualize_image(images[0], anchors, self.pixel_mean, self.pixel_std, separate_show=True)
 
         grid_sizes = [feature_map.shape[-2:] for feature_map in features]
+        # DEBUG
+        visualize_image(images[0], gt_instances[0].gt_boxes, 0, 0)
+        draw_point(images[0], grid_sizes[2], 32)
+
         gt_labels, gt_boxes = self.label_anchors(anchors, gt_instances, grid_sizes)
 
         return self.losses(anchors, pred_logits, pred_confs, pred_anchor_deltas, gt_labels, gt_boxes,
@@ -201,20 +205,29 @@ class YoloV3(DenseDetector):
         anchors: generate a anchor for each point on each feature map.
         gt_instances: a list, one instances contain all gt instance on a image.
         """
-        anchors = Boxes.cat(anchors)
 
         gt_labels = []
         matched_gt_boxes = []
         for gt_per_image in gt_instances:
-            match_quality_matrix = pairwise_iou(gt_per_image.gt_boxes, anchors)
+            # match_quality_matrix = pairwise_iou(gt_per_image.gt_boxes, anchors)
             # v1
             # # 对所有的点分类 正样本(1) 负样本(0) 忽略样本(-1)
             # matched_gt_idx, anchor_labels = self.anchor_matcher(match_quality_matrix, anchors, gt_per_image.gt_boxes)
 
             # v2
+            matched_gt_idx, anchor_labels = [], []
+            for anchor, num_anchor, feature_map_size in zip(anchors, self.anchor_generator.num_anchors, grid_sizes):
+                anchor = anchor.tensor
+                anchor = anchor.reshape([feature_map_size[0], feature_map_size[1], num_anchor])
+                gt_boxes = gt_per_image.gt_boxes.tensor
+                anchor_wh = torch.tensor([anchor[0, 0, i].shape for i in range(num_anchor)], device=self.device)
+                iou_quality_matrix = pairwise_iou_with_wh(anchor_wh, gt_boxes)
 
-            matched_gt_idx, anchor_labels = self.anchor_matcher(match_quality_matrix, gt_per_image.gt_boxes,
-                                                                self.anchor_generator.strides, grid_sizes)
+                matched_gt_idx_i, anchor_labels_i = self.anchor_matcher(match_quality_matrix, gt_per_image.gt_boxes,
+                                                                        self.anchor_generator.strides, grid_sizes)
+
+                matched_gt_idx.append(matched_gt_idx_i)
+                anchor_labels.append(anchor_labels_i)
 
             # DEBUG visualize matched anchors and gt_anchors
             if os.environ.get("DEBUG"):
@@ -225,26 +238,11 @@ class YoloV3(DenseDetector):
                     self.pixel_mean,
                     self.pixel_std,
                 )
-            matched_gt_idx, anchor_labels = Matcher(0.5, [-1, 0, 1])(match_quality_matrix, anchors,
-                                                                     gt_per_image.gt_boxes)
 
-            if os.environ.get("DEBUG"):
-                img = self.images[0].clone()
-                visualize_image(
-                    img,
-                    [gt_per_image.gt_boxes, Boxes(anchors.tensor[anchor_labels == 1])],
-                    self.pixel_mean,
-                    self.pixel_std,
-                )
-
-            if len(gt_per_image) > 0:
-                matched_gt_boxes_i = gt_per_image.gt_boxes.tensor[matched_gt_idx]
-                gt_labels_i = gt_per_image.gt_classes[matched_gt_idx]
-                gt_labels_i[anchor_labels == 0] = self.num_classes
-                gt_labels_i[anchor_labels == -1] = -1
-            else:
-                gt_labels_i = torch.zeros_like(anchors.tensor) + self.num_classes
-                matched_gt_boxes_i = torch.zeros_like(anchors.tensor)
+            matched_gt_boxes_i = gt_per_image.gt_boxes.tensor[matched_gt_idx]
+            gt_labels_i = gt_per_image.gt_classes[matched_gt_idx]
+            gt_labels_i[anchor_labels == 0] = self.num_classes
+            gt_labels_i[anchor_labels == -1] = -1
 
             gt_labels.append(gt_labels_i)
             matched_gt_boxes.append(matched_gt_boxes_i)
