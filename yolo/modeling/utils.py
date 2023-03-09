@@ -12,12 +12,13 @@ from typing import Optional, List
 import numpy as np
 
 
-def img_to_np(image):
-    img = image.clone()
-    img = img + torch.tensor([103.530, 116.280, 123.675])
-    img = img.cpu().numpy().transpose(1, 2, 0).astype(np.uint8)
-    img = np.ascontiguousarray(img)
-    return img
+def tensor_to_image(tensor):
+    img = tensor.clone()
+    img = img + torch.tensor([103.530, 116.280, 123.675], device=img.device)[:, None, None]
+    img = img.permute(1, 2, 0)
+    img = img.to("cpu", torch.uint8).numpy()
+    ndarr = np.ascontiguousarray(img)
+    return ndarr
 
 
 def visualize_image(
@@ -29,7 +30,7 @@ def visualize_image(
         separate_show=False
 
 ):
-    img = img_to_np(image)
+    img = tensor_to_image(image)
     colors = [(255, 0, 0), (255, 255, 0), (255, 255, 255), (255, 0, 255), (0, 255, 255)]
     if show_original_image:
         plt.imshow(img[..., ::-1])
@@ -52,7 +53,8 @@ def visualize_image(
             plt.show()
 
     elif isinstance(boxes, (Boxes, Tensor)):
-        boxes = Boxes(boxes).tensor
+        if isinstance(boxes, Boxes):
+            boxes = boxes.tensor
         for (x0, y0, x1, y1) in boxes:
             img = cv2.rectangle(img, (int(x0), int(y0)), (int(x1), int(y1)), color=(255, 0, 0),
                                 thickness=1)
@@ -63,22 +65,16 @@ def visualize_image(
         pass
 
 
-def draw_grid_lines(image, grid_size, stride=1):
-    img = img_to_np(image) if isinstance(image, torch.Tensor) else image
+def draw_point(image, grid_size, stride=1):
+    img = tensor_to_image(image) if isinstance(image, torch.Tensor) else image
     grid_height, grid_width = grid_size
     x = torch.arange(0, grid_width * stride, step=stride, dtype=torch.float32)
     y = torch.arange(0, grid_height * stride, step=stride, dtype=torch.float32)
     x, y = torch.meshgrid(x, y)
     x, y = x.reshape(-1), y.reshape(-1)
     point1 = torch.stack([x, y], dim=-1).numpy()
-    point2 = torch.stack([x, y], dim=-1).numpy()
 
-    for p1, p2 in zip(point1, point2):
-        # plt.plot(p1, p2)
-        ...
-
-    plt.plot([0, 0], [0, 100])
-    plt.plot([100, 100], [100, 100])
+    plt.scatter(point1[:, 0], point1[:, 1], marker=".")
     plt.imshow(img)
     plt.show()
 
@@ -86,5 +82,5 @@ def draw_grid_lines(image, grid_size, stride=1):
 if __name__ == '__main__':
     from matplotlib import image
 
-    data = image.imread("/home/sparkai/PycharmProjects/YOLO/1.png")
-    draw_grid_lines(data, (13, 13), 52)
+    data = image.imread("./1.png")
+    draw_point(data, (13, 13), 52)
