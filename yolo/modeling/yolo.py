@@ -19,7 +19,7 @@ from detectron2.modeling.meta_arch import DenseDetector
 from detectron2.utils.events import get_event_storage
 
 from .box_regression import Box2BoxTransform
-from .matcher import Matcher
+from .matcher import Matcher, Matcher2
 from .utils import visualize_image
 
 __all__ = ["YoloV3"]
@@ -37,7 +37,7 @@ class YoloV3(DenseDetector):
             head,
             anchor_generator,
             box2box_transform: Box2BoxTransform,
-            anchor_matcher: Matcher,
+            anchor_matcher: Matcher2,
             num_classes,
             # loss parameters
             # ...
@@ -77,7 +77,7 @@ class YoloV3(DenseDetector):
             "head": head,
             "anchor_generator": anchor_generator,
             "box2box_transform": Box2BoxTransform((1., 1., 1., 1.), 0.5),
-            "anchor_matcher": Matcher(
+            "anchor_matcher": Matcher2(
                 threshold=cfg.MODEL.YOLO.IOU_THRESHOLD,
                 labels=cfg.MODEL.YOLO.IOU_LABELS,
                 allow_low_quality_matches=False
@@ -101,12 +101,13 @@ class YoloV3(DenseDetector):
         if os.environ.get("DEBUG"):
             visualize_image(images[0], anchors, self.pixel_mean, self.pixel_std, separate_show=True)
 
-        gt_labels, gt_boxes = self.label_anchors(anchors, gt_instances)
+        grid_sizes = [feature_map.shape[-2:] for feature_map in features]
+        gt_labels, gt_boxes = self.label_anchors(anchors, gt_instances, grid_sizes)
 
         return self.losses(anchors, pred_logits, pred_confs, pred_anchor_deltas, gt_labels, gt_boxes,
                            self._get_strides())
 
-    def _get_strides(self):
+    def _get_strides(self) -> List[int]:
         backbone_shapes = self.backbone.output_shape()
         strides = [backbone_shapes[f].stride for f in self.head_in_features]
         return strides
@@ -195,18 +196,38 @@ class YoloV3(DenseDetector):
         return logits_loss
 
     @torch.no_grad()
-    def label_anchors(self, anchors: List[Boxes], gt_instances: List[Instances]):
+    def label_anchors(self, anchors: List[Boxes], gt_instances: List[Instances], grid_sizes):
         """
-        anchors: generate A anchor for each point on each feature map.
-        gt_instances: a list, one instance contain all gt instance on a image.
+        anchors: generate a anchor for each point on each feature map.
+        gt_instances: a list, one instances contain all gt instance on a image.
         """
         anchors = Boxes.cat(anchors)
+
         gt_labels = []
         matched_gt_boxes = []
         for gt_per_image in gt_instances:
             match_quality_matrix = pairwise_iou(gt_per_image.gt_boxes, anchors)
-            matched_gt_idx, anchor_labels = self.anchor_matcher(match_quality_matrix, anchors, gt_per_image.gt_boxes)
+            # v1
+            # # 对所有的点分类 正样本(1) 负样本(0) 忽略样本(-1)
+            # matched_gt_idx, anchor_labels = self.anchor_matcher(match_quality_matrix, anchors, gt_per_image.gt_boxes)
+
+            # v2
+
+            matched_gt_idx, anchor_labels = self.anchor_matcher(match_quality_matrix, gt_per_image.gt_boxes,
+                                                                self.anchor_generator.strides, grid_sizes)
+
             # DEBUG visualize matched anchors and gt_anchors
+            if os.environ.get("DEBUG"):
+                img = self.images[0].clone()
+                visualize_image(
+                    img,
+                    [gt_per_image.gt_boxes, Boxes(anchors.tensor[anchor_labels == 1])],
+                    self.pixel_mean,
+                    self.pixel_std,
+                )
+            matched_gt_idx, anchor_labels = Matcher(0.5, [-1, 0, 1])(match_quality_matrix, anchors,
+                                                                     gt_per_image.gt_boxes)
+
             if os.environ.get("DEBUG"):
                 img = self.images[0].clone()
                 visualize_image(

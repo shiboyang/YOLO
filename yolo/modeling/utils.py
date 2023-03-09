@@ -12,6 +12,14 @@ from typing import Optional, List
 import numpy as np
 
 
+def img_to_np(image):
+    img = image.clone()
+    img = img + torch.tensor([103.530, 116.280, 123.675])
+    img = img.cpu().numpy().transpose(1, 2, 0).astype(np.uint8)
+    img = np.ascontiguousarray(img)
+    return img
+
+
 def visualize_image(
         image: Tensor,
         boxes: [Optional[Boxes], Optional[List[Boxes]]],
@@ -21,10 +29,7 @@ def visualize_image(
         separate_show=False
 
 ):
-    img = image.clone()
-    img = img * pixel_std + pixel_mean
-    img = img.cpu().numpy().transpose(1, 2, 0).astype(np.uint8)
-    img = np.ascontiguousarray(img)
+    img = img_to_np(image)
     colors = [(255, 0, 0), (255, 255, 0), (255, 255, 255), (255, 0, 255), (0, 255, 255)]
     if show_original_image:
         plt.imshow(img[..., ::-1])
@@ -58,8 +63,28 @@ def visualize_image(
         pass
 
 
+def draw_grid_lines(image, grid_size, stride=1):
+    img = img_to_np(image) if isinstance(image, torch.Tensor) else image
+    grid_height, grid_width = grid_size
+    x = torch.arange(0, grid_width * stride, step=stride, dtype=torch.float32)
+    y = torch.arange(0, grid_height * stride, step=stride, dtype=torch.float32)
+    x, y = torch.meshgrid(x, y)
+    x, y = x.reshape(-1), y.reshape(-1)
+    point1 = torch.stack([x, y], dim=-1).numpy()
+    point2 = torch.stack([x, y], dim=-1).numpy()
+
+    for p1, p2 in zip(point1, point2):
+        # plt.plot(p1, p2)
+        ...
+
+    plt.plot([0, 0], [0, 100])
+    plt.plot([100, 100], [100, 100])
+    plt.imshow(img)
+    plt.show()
+
+
 if __name__ == '__main__':
-    image = cv2.imread("/home/sparkai/Pictures/2.png")
-    image = torch.from_numpy(image)
-    image = image.permute(2, 0, 1).to("cuda")
-    visualize_image(image, Boxes(Tensor([[-10, -10, 200, 200]])))
+    from matplotlib import image
+
+    data = image.imread("/home/sparkai/PycharmProjects/YOLO/1.png")
+    draw_grid_lines(data, (13, 13), 52)

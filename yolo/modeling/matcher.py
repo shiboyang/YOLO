@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 
 import torch
 
@@ -53,3 +53,46 @@ class Matcher:
         center_boxes2 = boxes2.get_centers()
         distance = torch.abs(center_boxes1[:, None, :] - center_boxes2[None, :, :]).sum(dim=-1)
         return distance
+
+
+class Matcher2:
+    ignore_label_idx = 0
+    negative_label_idx = 1
+    positive_label_idx = 2
+
+    def __init__(self, threshold: float, labels: List[int], allow_low_quality_matches: bool = False):
+        self.threshold = threshold
+        self.labels = labels
+        self.allow_low_quality_matches = allow_low_quality_matches
+
+    def __call__(self, match_quality_matrix: torch.Tensor, gt_boxes: Boxes, strides: List[int],
+                 grid_sizes: List[Tuple[int, int]]):
+        """
+        match_quality_matrix: shape:[num_instance, num_anchor]
+        boxes:
+
+
+        """
+
+        matched_val, matches = match_quality_matrix.max(dim=0)
+
+        matched_labels = torch.full(matches.shape, self.labels[self.negative_label_idx], device=gt_boxes.device)
+        matched_labels[matched_val > self.threshold] = self.labels[self.ignore_label_idx]
+
+        pre_feature_length = 0
+        for (feature_height, feature_width), stride in zip(grid_sizes, strides):
+            mask = torch.full((3, feature_height, feature_width), False, device=gt_boxes.device)
+            gt_box = gt_boxes.get_centers() / stride
+            print(f"feature map w:{feature_width} h:{feature_height}")
+            print("gt box in x maximum:", gt_box[:, [0]].max(), "minimum:", gt_box[:, [0]].min())
+            print("gt box in y maximum:", gt_box[:, [1]].max(), "minimum:", gt_box[:, [1]].min())
+
+            gt_box_idx = gt_box.long()
+            mask[:, gt_box_idx[:, 1], gt_box_idx[:, 0]] = True
+            mask = mask.view(-1)
+            positive_mask_idx = torch.nonzero(mask).view(-1)
+            positive_mask_idx += pre_feature_length
+            matched_labels[positive_mask_idx] = self.labels[self.positive_label_idx]
+            pre_feature_length += mask.numel()
+
+        return matches, matched_labels
