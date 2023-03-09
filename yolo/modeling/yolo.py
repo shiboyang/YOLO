@@ -218,10 +218,12 @@ class YoloV3(DenseDetector):
             matched_gt_idx, anchor_labels = [], []
             for anchor, num_anchor, feature_map_size in zip(anchors, self.anchor_generator.num_anchors, grid_sizes):
                 anchor = anchor.tensor
-                anchor = anchor.reshape([feature_map_size[0], feature_map_size[1], num_anchor])
+                anchor = anchor.reshape([feature_map_size[0], feature_map_size[1], num_anchor, 4])
                 gt_boxes = gt_per_image.gt_boxes.tensor
-                anchor_wh = torch.tensor([anchor[0, 0, i].shape for i in range(num_anchor)], device=self.device)
-                iou_quality_matrix = pairwise_iou_with_wh(anchor_wh, gt_boxes)
+                anchor_i = torch.stack([anchor[0, 0, i, :] for i in range(num_anchor)])
+                anchor_wh = anchor_i[:, 2:] - anchor_i[:, :2]
+                gt_boxes_wh = gt_boxes[:, 2:] - gt_boxes[:, :2]
+                iou_quality_matrix = pairwise_iou_with_wh(anchor_wh, gt_boxes_wh)
 
                 matched_gt_idx_i, anchor_labels_i = self.anchor_matcher(match_quality_matrix, gt_per_image.gt_boxes,
                                                                         self.anchor_generator.strides, grid_sizes)
