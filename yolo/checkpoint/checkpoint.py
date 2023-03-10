@@ -2,6 +2,8 @@ from detectron2.checkpoint import DetectionCheckpointer
 
 from .load_darknet import load_darknet_weights_to_dict
 
+__all__ = ["YOLOV3Checkpointer"]
+
 
 class YOLOV3Checkpointer(DetectionCheckpointer):
     """

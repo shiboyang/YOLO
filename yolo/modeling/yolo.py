@@ -41,7 +41,7 @@ class YoloV3(DenseDetector):
             num_classes,
             # loss parameters
             # ...
-            test_score_thresh=0.05,
+            test_score_thresh=0.25,
             test_topk_candidates=1000,
             test_nms_thresh=0.5,
             max_detections_per_image=100,
@@ -205,13 +205,13 @@ class YoloV3(DenseDetector):
         anchors: generate a anchor for each point on each feature map.
         gt_instances: a list, one instances contain all gt instance on a image.
         """
-
+        # anchors = Boxes.cat(anchors)
         gt_labels = []
         matched_gt_boxes = []
         for gt_per_image in gt_instances:
             # match_quality_matrix = pairwise_iou(gt_per_image.gt_boxes, anchors)
-            # v1
-            # # 对所有的点分类 正样本(1) 负样本(0) 忽略样本(-1)
+            # # v1
+            # # # 对所有的点分类 正样本(1) 负样本(0) 忽略样本(-1)
             # matched_gt_idx, anchor_labels = self.anchor_matcher(match_quality_matrix, anchors, gt_per_image.gt_boxes)
 
             # v2
@@ -253,7 +253,7 @@ class YoloV3(DenseDetector):
 
     def forward_inference(self, images: ImageList, features: List[Tensor], predictions: List[List[Tensor]]):
         """
-        模型评估函数，在test阶段DenseDetector.forward会调用此函数
+        推理函数，在test阶段DenseDetector.forward会调用此函数
         Return bounding-box detected results by thresholding on scores and applying non-maximum suppression
         Arguments:
             images:
