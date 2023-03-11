@@ -339,24 +339,39 @@ class YoloV3(DenseDetector):
     ) -> Instances:
         """
         在一个feature map上计算每一个点的 分类 回归 和 置信度
+        Args:
+            anchors
+            pred_scores: score for each point of feature map. shape: [HW, num_classes]
+            pred_confs: confidence. shape: [HW, 1]
+            pred_deltas: (dx, dy, dw, dh). offset. shape [HW, 4]
+
         """
+        # the first filter. filtering the object confidence.
+        confs_mask = pred_confs > score_thresh
+        pred_confs = pred_confs[confs_mask]  # [num_mask, 1]
+        pred_deltas = pred_deltas[confs_mask]  # [num_mask, 4]
+        pred_scores = pred_scores[confs_mask]  # [num_mask, 1]
+        # the second filter, filtering classes scores.
         # P(cls)  = P(cls) * P(cls|obj)
-        pred_scores = pred_scores * pred_confs
-        # 在每个点计算最大的得分和类别
-        pred_scores, pred_cls = pred_scores.max(dim=1)
+        pred_scores = pred_scores * pred_confs[:, None]
+        if self.num_classes > 1:
+            # multiple class
+            # i: HW's index. j: classes index.
+            i, j = torch.nonzero(pred_scores > score_thresh, as_tuple=True)
+            pred_confs = pred_scores[j]
+            pred_cls = j
+            pred_deltas = pred_deltas[i]
+        else:
+            # single class.
+            pred_confs = ...
+            pred_cls = ...
+            pred_deltas = ...
 
-        # Apply tow filtering to make NMS faster
-        # 根据score_threshold过滤用于计算的点
-        scores_mask = pred_scores > score_thresh
-        pred_scores = pred_scores[scores_mask]
-        topk_idxs = torch.nonzero(scores_mask).view(-1)
-
-        # 再次通过topk个点过滤
-        num_topk = min(topk_candidates, pred_scores.size(0))
-        pred_scores, idxs = pred_scores.topk(num_topk)
-        topk_idxs = topk_idxs[idxs]
+        # # 再次通过topk个点过滤
+        num_topk = min(topk_candidates, pred_confs.size(0))
+        pred_confs, topk_idxs = pred_confs.topk(num_topk)
         pred_cls = pred_cls[topk_idxs]
-
+        #
         pred_boxes = self.box2box_transform.apply_deltas(pred_deltas[topk_idxs], anchors.tensor[topk_idxs], stride)
 
         return Instances(
