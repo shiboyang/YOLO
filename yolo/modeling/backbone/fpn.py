@@ -66,7 +66,7 @@ class LateralBlock(CNNBlockBase):
     def forward(self, x):
         for conv in self.blocks:
             x = conv(x)
-            x = F.leaky_relu(x)
+            x = F.leaky_relu(x, 0.1)
 
         return x
 
@@ -87,7 +87,8 @@ class OutputBlock(CNNBlockBase):
             in_channels=in_channels * 2,
             out_channels=out_channels,
             kernel_size=1,
-            stride=1
+            stride=1,
+            bias=True
         )
         weight_init.c2_msra_fill(self.conv)
         weight_init.c2_msra_fill(self.head)
@@ -195,7 +196,7 @@ def build_darknet53_fpn_backbone(cfg, input_shape):
     in_features = cfg.MODEL.DARKNET_FPN.IN_FEATURES
     num_classes = cfg.MODEL.YOLO.NUM_CLASSES
     num_anchors = len(cfg.MODEL.ANCHOR_GENERATOR.SIZES)
-    out_channels = (num_classes + 4 + 1) * num_anchors
+    out_channels = (4 + 1 + num_classes) * num_anchors
 
     norm = cfg.MODEL.DARKNET_FPN.NORM
     backbone = DarkNetFPN(

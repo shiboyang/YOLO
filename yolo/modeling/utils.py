@@ -3,12 +3,14 @@
 # @Site    : 
 # @File    : utils.py
 # @Software: PyCharm
+import os
+
 import torch
 import matplotlib.pyplot as plt
 import cv2
 from torch import Tensor
 from detectron2.structures.boxes import Boxes
-from typing import Optional, List
+from typing import Optional, List, Dict
 import numpy as np
 
 
@@ -26,9 +28,11 @@ def pairwise_iou_with_wh(box1_wh: Tensor, box2_wh: Tensor):
     return iou
 
 
-def tensor_to_image(tensor):
+def tensor_to_np(tensor, pixel_mean=None):
+    # torch.tensor([103.530, 116.280, 123.675], device=tensor.device)[:, None, None]
     img = tensor.clone()
-    img = img + torch.tensor([103.530, 116.280, 123.675], device=img.device)[:, None, None]
+    if pixel_mean:
+        img = img + pixel_mean
     img = img.permute(1, 2, 0)
     img = img.to("cpu", torch.uint8).numpy()
     ndarr = np.ascontiguousarray(img)
@@ -44,7 +48,7 @@ def visualize_image(
         separate_show=False
 
 ):
-    img = tensor_to_image(image)
+    img = tensor_to_np(image)
     colors = [(255, 0, 0), (255, 255, 0), (255, 255, 255), (255, 0, 255), (0, 255, 255)]
     if show_original_image:
         plt.imshow(img[..., ::-1])
@@ -80,7 +84,7 @@ def visualize_image(
 
 
 def draw_point(image, grid_size, stride=1):
-    img = tensor_to_image(image) if isinstance(image, torch.Tensor) else image
+    img = tensor_to_np(image) if isinstance(image, torch.Tensor) else image
     grid_height, grid_width = grid_size
     x = torch.arange(0, grid_width * stride, step=stride, dtype=torch.float32)
     y = torch.arange(0, grid_height * stride, step=stride, dtype=torch.float32)
@@ -91,6 +95,39 @@ def draw_point(image, grid_size, stride=1):
     plt.scatter(point1[:, 0], point1[:, 1], marker=".")
     plt.imshow(img)
     plt.show()
+
+
+def visualize_predictions(image, boxes: torch.Tensor, classes: torch.Tensor, scores: torch.Tensor,
+                          cls_map=None):
+    if isinstance(image, str):
+        img = cv2.imread(os.path.expanduser(image))
+    elif isinstance(image, torch.Tensor):
+        img = image.clone()
+        img = img * 255
+        img = img.permute(1, 2, 0)
+        img = img.to("cpu", torch.uint8).numpy()
+        img = np.ascontiguousarray(img)
+    else:
+        raise NotImplementedError
+
+    for (x1, y1, x2, y2), cls_id, score in zip(boxes, classes, scores):
+        pt1 = int(x1), int(y1)
+        pt2 = int(x2), int(y2)
+        cv2.rectangle(img, pt1, pt2, color=(0, 0, 255), thickness=1)
+        cls = cls_map[cls_id] if cls_map else cls_id
+        cls = f"{cls} {score:0.3}"
+        cv2.putText(img, cls, (pt1[0], pt1[1] + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0))
+    plt.imshow(img)
+    plt.show()
+
+
+def load_classes(path):
+    """
+    Loads class labels at 'path'
+    """
+    with open(path, "r") as fp:
+        names = fp.read().splitlines()
+    return names
 
 
 if __name__ == '__main__':

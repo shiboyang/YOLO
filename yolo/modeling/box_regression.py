@@ -47,9 +47,9 @@ class Box2BoxTransform:
         """
         boxes = boxes.to(deltas.dtype)
 
-        boxes_wh = boxes[..., 2:] - boxes[..., :2]
-        boxes_cxy = boxes[..., 2:] + boxes_wh / 2
-        target_cxy = (deltas[..., :2] + boxes_cxy) * stride
+        boxes_wh = boxes[:, 2:] - boxes[:, :2]
+        boxes_cxy = boxes[:, :2] + boxes_wh / 2
+        target_cxy = deltas[:, :2] * stride + boxes_cxy
         target_wh = boxes_wh * deltas[..., 2:].exp()
 
         wx, wy, ww, wh = self.weights

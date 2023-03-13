@@ -41,9 +41,9 @@ class YoloV3(DenseDetector):
             num_classes,
             # loss parameters
             # ...
-            test_score_thresh=0.25,
+            test_score_thresh=0.5,
             test_topk_candidates=1000,
-            test_nms_thresh=0.5,
+            test_nms_thresh=0.4,
             max_detections_per_image=100,
             pixel_mean,
             pixel_std,
@@ -342,25 +342,27 @@ class YoloV3(DenseDetector):
         Args:
             anchors
             pred_scores: score for each point of feature map. shape: [HW, num_classes]
-            pred_confs: confidence. shape: [HW, 1]
+            pred_confs: confidence. shape: [HWA, 1]
             pred_deltas: (dx, dy, dw, dh). offset. shape [HW, 4]
 
         """
         # the first filter. filtering the object confidence.
-        confs_mask = pred_confs > score_thresh
+        confs_mask = (pred_confs > score_thresh).squeeze(-1)
         pred_confs = pred_confs[confs_mask]  # [num_mask, 1]
         pred_deltas = pred_deltas[confs_mask]  # [num_mask, 4]
         pred_scores = pred_scores[confs_mask]  # [num_mask, 1]
+        anchors = anchors.tensor[confs_mask]
         # the second filter, filtering classes scores.
         # P(cls)  = P(cls) * P(cls|obj)
-        pred_scores = pred_scores * pred_confs[:, None]
+        pred_scores = pred_scores * pred_confs
         if self.num_classes > 1:
             # multiple class
             # i: HW's index. j: classes index.
             i, j = torch.nonzero(pred_scores > score_thresh, as_tuple=True)
-            pred_confs = pred_scores[j]
+            pred_confs = pred_scores[i, j]
             pred_cls = j
             pred_deltas = pred_deltas[i]
+            anchors = anchors[i]
         else:
             # single class.
             pred_confs = ...
@@ -368,14 +370,14 @@ class YoloV3(DenseDetector):
             pred_deltas = ...
 
         # # 再次通过topk个点过滤
-        num_topk = min(topk_candidates, pred_confs.size(0))
-        pred_confs, topk_idxs = pred_confs.topk(num_topk)
-        pred_cls = pred_cls[topk_idxs]
-        #
-        pred_boxes = self.box2box_transform.apply_deltas(pred_deltas[topk_idxs], anchors.tensor[topk_idxs], stride)
+        # num_topk = min(topk_candidates, pred_confs.size(0))
+        # pred_confs, topk_idxs = pred_confs.topk(num_topk)
+        # pred_cls = pred_cls[topk_idxs]
+
+        pred_boxes = self.box2box_transform.apply_deltas(pred_deltas, anchors, stride)
 
         return Instances(
-            image_size=image_size, pred_boxes=Boxes(pred_boxes), scores=pred_scores, pred_classes=pred_cls
+            image_size=image_size, pred_boxes=Boxes(pred_boxes), scores=pred_confs, pred_classes=pred_cls
         )
 
 
