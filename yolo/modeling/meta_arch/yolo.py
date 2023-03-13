@@ -4,7 +4,7 @@
 # @File    : yolo.py
 # @Software: PyCharm
 import os
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -18,9 +18,9 @@ from detectron2.structures import Boxes, Instances, pairwise_iou, ImageList
 from detectron2.modeling.meta_arch import DenseDetector
 from detectron2.utils.events import get_event_storage
 
-from .box_regression import Box2BoxTransform
-from .matcher import Matcher, Matcher2
-from .utils import visualize_image, draw_point, pairwise_iou_with_wh
+from yolo.modeling.box_regression import Box2BoxTransform
+from yolo.modeling.matcher import Matcher, Matcher2
+from yolo.modeling.utils import visualize_image, draw_point, pairwise_iou_with_wh
 
 __all__ = ["YoloV3"]
 
@@ -86,6 +86,19 @@ class YoloV3(DenseDetector):
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
             "pixel_std": cfg.MODEL.PIXEL_STD,
         }
+
+    def preprocess_image(self, batched_inputs: List[Dict[str, Tensor]]):
+        """
+        Normalize, pad and batch the input images.
+        """
+        images = [self._move_to_current_device(x["image"]) for x in batched_inputs]
+        images = [x / 255.0 for x in images]
+        images = ImageList.from_tensors(
+            images,
+            self.backbone.size_divisibility,
+            padding_constraints=self.backbone.padding_constraints,
+        )
+        return images
 
     def forward_training(self, images, features, predictions, gt_instances):
         # del images

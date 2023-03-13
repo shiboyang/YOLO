@@ -1,8 +1,8 @@
 from typing import List, Tuple
-
 import torch
 
 from detectron2.structures import Boxes
+from .utils import draw_point
 
 
 class Matcher:
