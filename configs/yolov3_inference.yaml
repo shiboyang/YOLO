@@ -1,3 +1,4 @@
+VERSION: 2
 MODEL:
   #  DEVICE: "cpu"
   META_ARCHITECTURE: "YoloV3"
@@ -29,9 +30,6 @@ INPUT:
   MAX_SIZE_TEST: 416
 
 OUTPUT_DIR: "./output"
-
-VERSION: 2
-
 
 DATASETS:
   TRAIN: ("coco_2017_val",)

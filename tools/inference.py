@@ -6,7 +6,6 @@
 import argparse
 import glob
 import os
-from typing import List
 
 import cv2
 import torch
@@ -19,7 +18,6 @@ from detectron2.data.detection_utils import read_image
 from detectron2.modeling import build_model
 from detectron2.utils.visualizer import Visualizer, ColorMode
 from yolo.checkpoint.checkpoint import YOLOV3Checkpointer
-from yolo.modeling.utils import visualize_predictions
 
 
 class Predictor:
@@ -46,19 +44,6 @@ class Predictor:
         prediction = self.model([inputs])[0]
         return prediction
 
-    @torch.no_grad()
-    def detect_batched_image(self, batched_inputs: torch.Tensor, classes: List[str]):
-        height, width = batched_inputs.shape[-2:]
-        batched_inputs = [dict(height=height, width=width, image=image) for image in batched_inputs]
-        predictions = self.model(batched_inputs)
-
-        for img_dict, prediction in zip(batched_inputs, predictions):
-            img = img_dict["image"]
-            instances = prediction["instances"]
-            visualize_predictions(img, boxes=instances.pred_boxes.tensor, classes=instances.pred_classes,
-                                  scores=instances.scores, cls_map=classes)
-
-        return predictions
 
 class VisualizationDemo:
     def __init__(self, cfg, instance_mode=ColorMode.IMAGE):
@@ -140,6 +125,7 @@ def main():
         cv2.imshow("Image", visualized_output.get_image()[:, :, ::-1])
         if cv2.waitKey(0) == 27:
             break
+    cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
