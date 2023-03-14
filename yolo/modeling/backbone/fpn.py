@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import fvcore.nn.weight_init as weight_init
 from itertools import zip_longest
 
-from detectron2.modeling import BACKBONE_REGISTRY
+from detectron2.modeling import BACKBONE_REGISTRY, build_anchor_generator
 from detectron2.modeling.backbone import Backbone
 from detectron2.layers import Conv2d, get_norm, CNNBlockBase
 from . import build_darknet53_backbone
@@ -194,8 +194,15 @@ class DarkNetFPN(Backbone):
 def build_darknet53_fpn_backbone(cfg, input_shape):
     bottom_up = build_darknet53_backbone(cfg, input_shape)
     in_features = cfg.MODEL.DARKNET_FPN.IN_FEATURES
+    backbone_shape = bottom_up.output_shape()
+    feature_shape = [backbone_shape[f] for f in in_features]
     num_classes = cfg.MODEL.YOLO.NUM_CLASSES
-    num_anchors = len(cfg.MODEL.ANCHOR_GENERATOR.SIZES)
+    num_anchors = build_anchor_generator(cfg, feature_shape).num_cell_anchors
+    assert (
+            len(set(num_anchors)) == 1
+    ), "Using different number of anchors between levels is not currently supported!"
+    num_anchors = num_anchors[0]
+
     out_channels = (4 + 1 + num_classes) * num_anchors
 
     norm = cfg.MODEL.DARKNET_FPN.NORM

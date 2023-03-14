@@ -4,23 +4,23 @@
 # @File    : yolo.py
 # @Software: PyCharm
 import os
-from typing import List, Tuple, Union
+from typing import List, Tuple
+
 import torch
 import torch.nn as nn
-from torch import Tensor
 import torch.nn.functional as F
+from torch import Tensor
 
-from detectron2.layers import ShapeSpec, batched_nms
-from detectron2.modeling import META_ARCH_REGISTRY, build_anchor_generator
 from detectron2.config import configurable
+from detectron2.layers import batched_nms
+from detectron2.modeling import META_ARCH_REGISTRY, build_anchor_generator
 from detectron2.modeling.backbone import build_backbone
-from detectron2.structures import Boxes, Instances, pairwise_iou, ImageList
 from detectron2.modeling.meta_arch import DenseDetector
+from detectron2.structures import Boxes, Instances, pairwise_iou, ImageList
 from detectron2.utils.events import get_event_storage
-
 from yolo.modeling.box_regression import Box2BoxTransform
-from yolo.modeling.matcher import Matcher, Matcher2
-from yolo.modeling.utils import visualize_image, draw_point, pairwise_iou_with_wh
+from yolo.modeling.matcher import Matcher
+from yolo.modeling.utils import visualize_image, draw_point
 
 __all__ = ["YoloV3"]
 
@@ -72,13 +72,18 @@ class YoloV3(DenseDetector):
         backbone_shape = backbone.output_shape()
         in_features = cfg.MODEL.YOLO.IN_FEATURES
         feature_shape = [backbone_shape[f] for f in in_features]
-        head = YoloV3Head(cfg, feature_shape)
         anchor_generator = build_anchor_generator(cfg, feature_shape)
+        num_anchors = anchor_generator.num_cell_anchors
+        assert (
+                len(set(num_anchors)) == 1
+        ), "Using different number of anchors between levels is not currently supported!"
+        num_anchors = num_anchors[0]
+        num_classes = cfg.MODEL.YOLO.NUM_CLASSES
 
         return {
             "in_features": in_features,
             "backbone": backbone,
-            "head": head,
+            "head": YoloV3Head(num_anchors=num_anchors, num_classes=num_classes),
             "anchor_generator": anchor_generator,
             "box2box_transform": Box2BoxTransform((1., 1., 1., 1.), 0.5),
             "anchor_matcher": Matcher(
@@ -415,18 +420,10 @@ class YoloV3(DenseDetector):
 
 
 class YoloV3Head(nn.Module):
-    @configurable
     def __init__(self, *, num_classes, num_anchors):
         super(YoloV3Head, self).__init__()
         self.num_classes = num_classes
         self.num_anchors = num_anchors
-
-    @classmethod
-    def from_config(cls, cfg, input_shape: List[ShapeSpec]):
-        return {
-            "num_classes": cfg.MODEL.YOLO.NUM_CLASSES,
-            "num_anchors": len(cfg.MODEL.ANCHOR_GENERATOR.SIZES)
-        }
 
     def forward(self, features: List[Tensor]):
         """
