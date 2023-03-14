@@ -114,8 +114,9 @@ class YoloV3(DenseDetector):
 
         grid_sizes = [feature_map.shape[-2:] for feature_map in features]
         # DEBUG
-        visualize_image(images[0], gt_instances[0].gt_boxes, 0, 0)
-        draw_point(images[0], grid_sizes[2], 32)
+        if os.environ.get("DEBUG"):
+            visualize_image(images[0], gt_instances[0].gt_boxes, 0, 0)
+            draw_point(images[0], grid_sizes[2], 32)
 
         gt_labels, gt_boxes = self.label_anchors(anchors, gt_instances, grid_sizes)
 

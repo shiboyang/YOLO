@@ -29,7 +29,7 @@ MODEL:
     TEST_SCORE_THRESH: 0.25
     TEST_NMS_THRESH: 0.5
 DATASETS:
-  TRAIN: ("coco_2017_val",)
+  TRAIN: ("coco_2017_train",)
   TEST: ("coco_2017_val",)
 SOLVER:
   IMS_PER_BATCH: 16
