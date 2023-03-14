@@ -1,27 +1,35 @@
+VERSION: 2
 MODEL:
-  #  DEVICE: "cpu"
   META_ARCHITECTURE: "YoloV3"
   WEIGHTS: "./configs/yolov3.weights"
+  PIXEL_MEAN: [ 0.0, 0.0, 0.0 ]
+  PIXEL_STD: [ 255.0, 255.0, 255.0 ]
   BACKBONE:
     NAME: "build_darknet53_fpn_backbone"
   DARKNET:
     STEM_OUT_CHANNELS: 32
     NORM: "BN"
-    OUT_FEATURES: [ "d3", "d4", "d5" ]
+    OUT_FEATURES: [ "res3", "res4", "res5" ]
   DARKNET_FPN:
     NAME: "build_darknet_fpn"
-    IN_FEATURES: [ "d3", "d4", "d5" ]
+    IN_FEATURES: [ "res3", "res4", "res5" ]
     NORM: "BN"
   ANCHOR_GENERATOR:
     NAME: "YoloAnchorGenerator"
     OFFSET: 0.5
     SIZES: !!python/object/apply:eval [ "[[(w*h)**(1.0/2) for w,h in item] for item in [[[10,13],[16,30],[33,23]],[[30,61],[62,45],[59,119]],[[116,90],[156,198],[373,326]]]]" ]
     ASPECT_RATIOS: !!python/object/apply:eval [ "[[h/w for w,h in item] for item in [[[10,13],[16,30],[33,23]],[[30,61],[62,45],[59,119]],[[116,90],[156,198],[373,326]]]]" ]
+  #    SIZES:
+  #      - [ [ 10,13 ],[ 16,30 ],[ 33,23 ] ]
+  #      - [ [ 30,61 ],[ 62,45 ],[ 59,119 ] ]
+  #      - [ [ 116,90 ],[ 156,198 ],[ 373,326 ] ]
   YOLO:
     IN_FEATURES: [ "p3", "p4", "p5" ]
     NUM_CLASSES: 80
     IOU_THRESHOLD: 0.5
     IOU_LABELS: [ -1, 0, 1 ]
+    TEST_SCORE_THRESH: 0.25
+    TEST_NMS_THRESH: 0.5
 DATASETS:
   TRAIN: ("coco_2017_val",)
   TEST: ("coco_2017_val",)
@@ -31,9 +39,11 @@ SOLVER:
   STEPS: (60000, 80000)
   MAX_ITER: 90000
 INPUT:
-  MIN_SIZE_TRAIN: (608,)
+  FORMAT: "RGB"
+  MIN_SIZE_TRAIN: (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)
+  MIN_SIZE_TEST: 448
+#  MAX_SIZE_TEST: 416
 TEST:
   EVAL_PERIOD: 10000
 OUTPUT_DIR: "./output"
 
-VERSION: 2

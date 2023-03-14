@@ -58,7 +58,7 @@ class VisualizationDemo:
         assert self.image_format in ["BGR", "RGB"], self.image_format
 
     def run_on_image(self, image):
-        """
+        """resume_or_load
         Args:
             image (np.ndarray): an image of shape (H, W, C) (in BGR order).
                 This is the format used by OpenCV.
@@ -124,8 +124,8 @@ def main():
         cv2.namedWindow("Image", cv2.WINDOW_NORMAL)
         cv2.imshow("Image", visualized_output.get_image()[:, :, ::-1])
         if cv2.waitKey(0) == 27:
+            cv2.destroyAllWindows()
             break
-    cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':

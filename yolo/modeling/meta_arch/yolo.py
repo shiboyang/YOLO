@@ -4,7 +4,7 @@
 # @File    : yolo.py
 # @Software: PyCharm
 import os
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Union
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -37,7 +37,7 @@ class YoloV3(DenseDetector):
             head,
             anchor_generator,
             box2box_transform: Box2BoxTransform,
-            anchor_matcher: Matcher2,
+            anchor_matcher: Matcher,
             num_classes,
             # loss parameters
             # ...
@@ -62,6 +62,10 @@ class YoloV3(DenseDetector):
         self.test_nms_thresh = test_nms_thresh
         self.max_detections_pre_image = max_detections_per_image
 
+        # loss parameter
+        self.obj_weight = 1
+        self.noobj_weight = 100
+
     @classmethod
     def from_config(cls, cfg):
         backbone = build_backbone(cfg)
@@ -77,7 +81,7 @@ class YoloV3(DenseDetector):
             "head": head,
             "anchor_generator": anchor_generator,
             "box2box_transform": Box2BoxTransform((1., 1., 1., 1.), 0.5),
-            "anchor_matcher": Matcher2(
+            "anchor_matcher": Matcher(
                 threshold=cfg.MODEL.YOLO.IOU_THRESHOLD,
                 labels=cfg.MODEL.YOLO.IOU_LABELS,
                 allow_low_quality_matches=False
@@ -85,20 +89,9 @@ class YoloV3(DenseDetector):
             "num_classes": cfg.MODEL.YOLO.NUM_CLASSES,
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
             "pixel_std": cfg.MODEL.PIXEL_STD,
+            "test_score_thresh": cfg.MODEL.YOLO.TEST_SCORE_THRESH,
+            "test_nms_thresh": cfg.MODEL.YOLO.TEST_NMS_THRESH
         }
-
-    def preprocess_image(self, batched_inputs: List[Dict[str, Tensor]]):
-        """
-        Normalize, pad and batch the input images.
-        """
-        images = [self._move_to_current_device(x["image"]) for x in batched_inputs]
-        images = [x / 255.0 for x in images]
-        images = ImageList.from_tensors(
-            images,
-            self.backbone.size_divisibility,
-            padding_constraints=self.backbone.padding_constraints,
-        )
-        return images
 
     def forward_training(self, images, features, predictions, gt_instances):
         # del images
@@ -189,7 +182,7 @@ class YoloV3(DenseDetector):
         regression_loss = F.smooth_l1_loss(
             pred_anchor_deltas[positive_mask],
             target[positive_mask],
-            reduction="sum"
+            reduction="mean"
         )
 
         return regression_loss
@@ -198,18 +191,18 @@ class YoloV3(DenseDetector):
         objectness_loss = F.binary_cross_entropy(
             pred_confs[objectness_mask],
             target[objectness_mask],
-            reduction="sum"
+            reduction="mean"
         )
         noobjectness_loss = F.binary_cross_entropy(
             pred_confs[noobjectness_mask],
             target[noobjectness_mask],
-            reduction="sum"
+            reduction="mean"
         )
-        confidence_loss = objectness_loss + noobjectness_loss
+        confidence_loss = objectness_loss * self.obj_weight + noobjectness_loss * self.noobj_weight
         return confidence_loss
 
     def _compute_logits_loss(self, pred_logits, target):
-        logits_loss = F.binary_cross_entropy(pred_logits, target, reduction="sum")
+        logits_loss = F.binary_cross_entropy(pred_logits, target, reduction="mean")
         return logits_loss
 
     @torch.no_grad()
@@ -218,31 +211,31 @@ class YoloV3(DenseDetector):
         anchors: generate a anchor for each point on each feature map.
         gt_instances: a list, one instances contain all gt instance on a image.
         """
-        # anchors = Boxes.cat(anchors)
+        anchors = Boxes.cat(anchors)
         gt_labels = []
         matched_gt_boxes = []
         for gt_per_image in gt_instances:
-            # match_quality_matrix = pairwise_iou(gt_per_image.gt_boxes, anchors)
+            match_quality_matrix = pairwise_iou(gt_per_image.gt_boxes, anchors)
             # # v1
-            # # # 对所有的点分类 正样本(1) 负样本(0) 忽略样本(-1)
-            # matched_gt_idx, anchor_labels = self.anchor_matcher(match_quality_matrix, anchors, gt_per_image.gt_boxes)
+            # # 对所有的点分类 正样本(1) 负样本(0) 忽略样本(-1)
+            matched_gt_idx, anchor_labels = self.anchor_matcher(match_quality_matrix, anchors, gt_per_image.gt_boxes)
 
             # v2
-            matched_gt_idx, anchor_labels = [], []
-            for anchor, num_anchor, feature_map_size in zip(anchors, self.anchor_generator.num_anchors, grid_sizes):
-                anchor = anchor.tensor
-                anchor = anchor.reshape([feature_map_size[0], feature_map_size[1], num_anchor, 4])
-                gt_boxes = gt_per_image.gt_boxes.tensor
-                anchor_i = torch.stack([anchor[0, 0, i, :] for i in range(num_anchor)])
-                anchor_wh = anchor_i[:, 2:] - anchor_i[:, :2]
-                gt_boxes_wh = gt_boxes[:, 2:] - gt_boxes[:, :2]
-                iou_quality_matrix = pairwise_iou_with_wh(anchor_wh, gt_boxes_wh)
-
-                matched_gt_idx_i, anchor_labels_i = self.anchor_matcher(match_quality_matrix, gt_per_image.gt_boxes,
-                                                                        self.anchor_generator.strides, grid_sizes)
-
-                matched_gt_idx.append(matched_gt_idx_i)
-                anchor_labels.append(anchor_labels_i)
+            # matched_gt_idx, anchor_labels = [], []
+            # for anchor, num_anchor, feature_map_size in zip(anchors, self.anchor_generator.num_anchors, grid_sizes):
+            #     anchor = anchor.tensor
+            #     anchor = anchor.reshape([feature_map_size[0], feature_map_size[1], num_anchor, 4])
+            #     gt_boxes = gt_per_image.gt_boxes.tensor
+            #     anchor_i = torch.stack([anchor[0, 0, i, :] for i in range(num_anchor)])
+            #     anchor_wh = anchor_i[:, 2:] - anchor_i[:, :2]
+            #     gt_boxes_wh = gt_boxes[:, 2:] - gt_boxes[:, :2]
+            #     iou_quality_matrix = pairwise_iou_with_wh(anchor_wh, gt_boxes_wh)
+            #
+            #     matched_gt_idx_i, anchor_labels_i = self.anchor_matcher(match_quality_matrix, gt_per_image.gt_boxes,
+            #                                                             self.anchor_generator.strides, grid_sizes)
+            #
+            #     matched_gt_idx.append(matched_gt_idx_i)
+            #     anchor_labels.append(anchor_labels_i)
 
             # DEBUG visualize matched anchors and gt_anchors
             if os.environ.get("DEBUG"):
@@ -294,13 +287,12 @@ class YoloV3(DenseDetector):
         """
 
         """
-        pred = self.__decode_multi_level_predictions(
+        pred = self._decode_multi_level_predictions(
             anchors=anchors,
             pred_logits=logits,
             pred_confs=confidences,
             pred_deltas=deltas,
             score_thresh=self.test_score_thresh,
-            topk_candidates=self.test_topk_candidates,
             image_size=image_size
         )
 
@@ -308,14 +300,13 @@ class YoloV3(DenseDetector):
 
         return pred[keep[:self.max_detections_pre_image]]
 
-    def __decode_multi_level_predictions(
+    def _decode_multi_level_predictions(
             self,
             anchors: List[Boxes],
             pred_logits: List[Tensor],
             pred_confs: List[Tensor],
             pred_deltas: List[Tensor],
             score_thresh: float,
-            topk_candidates: int,
             image_size: Tuple[int, int],
     ) -> Instances:
         predictions: List[Instances] = []
@@ -325,13 +316,11 @@ class YoloV3(DenseDetector):
         for box_cls_i, box_reg_i, confs_i, anchors_i, stride_i in zip(pred_logits, pred_deltas, pred_confs, anchors,
                                                                       strides):
             predictions.append(
-                self.__decode_per_level_predictions(
+                self._decode_per_level_predictions(
                     anchors=anchors_i,
                     pred_scores=box_cls_i,
                     pred_confs=confs_i,
                     pred_deltas=box_reg_i,
-                    score_thresh=score_thresh,
-                    topk_candidates=topk_candidates,
                     image_size=image_size,
                     stride=stride_i
                 )
@@ -339,14 +328,12 @@ class YoloV3(DenseDetector):
 
         return predictions[0].cat(predictions)
 
-    def __decode_per_level_predictions(
+    def _decode_per_level_predictions(
             self,
             anchors: Boxes,
             pred_scores: Tensor,
             pred_confs: Tensor,
             pred_deltas: Tensor,
-            score_thresh: float,
-            topk_candidates: int,
             image_size: Tuple[int, int],
             stride: int
     ) -> Instances:
@@ -360,7 +347,7 @@ class YoloV3(DenseDetector):
 
         """
         # the first filter. filtering the object confidence.
-        confs_mask = (pred_confs > score_thresh).squeeze(-1)
+        confs_mask = (pred_confs > self.test_score_thresh).squeeze(-1)
         pred_confs = pred_confs[confs_mask]  # [num_mask, 1]
         pred_deltas = pred_deltas[confs_mask]  # [num_mask, 4]
         pred_scores = pred_scores[confs_mask]  # [num_mask, 1]
@@ -371,7 +358,7 @@ class YoloV3(DenseDetector):
         if self.num_classes > 1:
             # multiple class
             # i: HW's index. j: classes index.
-            i, j = torch.nonzero(pred_scores > score_thresh, as_tuple=True)
+            i, j = torch.nonzero(pred_scores > self.test_score_thresh, as_tuple=True)
             pred_confs = pred_scores[i, j]
             pred_cls = j
             pred_deltas = pred_deltas[i]
@@ -382,16 +369,49 @@ class YoloV3(DenseDetector):
             pred_cls = ...
             pred_deltas = ...
 
-        # # 再次通过topk个点过滤
-        # num_topk = min(topk_candidates, pred_confs.size(0))
-        # pred_confs, topk_idxs = pred_confs.topk(num_topk)
-        # pred_cls = pred_cls[topk_idxs]
-
+        # topk
         pred_boxes = self.box2box_transform.apply_deltas(pred_deltas, anchors, stride)
 
         return Instances(
             image_size=image_size, pred_boxes=Boxes(pred_boxes), scores=pred_confs, pred_classes=pred_cls
         )
+
+    # def _decode_per_level_predictions(self,
+    #                                   anchors: Boxes,
+    #                                   stride: Union[float, Tensor],
+    #                                   box_deltas: Tensor,
+    #                                   box_confs: Tensor,
+    #                                   cls_scores: Tensor,
+    #                                   image_size: Tuple[int, int]) -> Instances:
+    #
+    #     # 1. Keep boxes with confidence score higher than threshold
+    #     conf_mask = (box_confs >= self.test_score_thresh)
+    #     box_confs = box_confs[conf_mask]
+    #     topk_idxs = torch.nonzero(conf_mask)[:, 0]
+    #
+    #     # 2. Keep top k scoring boxes only
+    #     num_topk = min(self.test_topk_candidates, topk_idxs.size(0))
+    #     box_confs, idxs = box_confs.topk(num_topk)
+    #     topk_idxs = topk_idxs[idxs]
+    #
+    #     if isinstance(stride, Tensor): stride = stride[topk_idxs]
+    #     pred_boxes = self.box2box_transform.apply_deltas(
+    #         box_deltas[topk_idxs], anchors.tensor[topk_idxs], stride,
+    #     )
+    #
+    #     # 3. P(cls) = P(obj) * P(cls | obj)
+    #     cls_scores = cls_scores[topk_idxs]
+    #     cls_scores.mul_(box_confs[:, None])
+    #     pred_scores, pred_classes = cls_scores.max(dim=1)
+    #
+    #     # 4. Filter out low confidence boxes
+    #     conf_mask = (pred_scores >= self.test_score_thresh)
+    #     pred_scores = pred_scores[conf_mask]
+    #     pred_classes = pred_classes[conf_mask]
+    #     pred_boxes = pred_boxes[conf_mask]
+    #
+    #     return Instances(image_size, pred_boxes=Boxes(pred_boxes), scores=pred_scores, pred_classes=pred_classes)
+    #
 
 
 class YoloV3Head(nn.Module):

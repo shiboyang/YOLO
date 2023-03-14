@@ -17,6 +17,7 @@ from detectron2.modeling.backbone import BACKBONE_REGISTRY, Backbone
 from detectron2.layers.blocks import CNNBlockBase
 
 
+# todo Implement make_stage() function.
 class DarkNet(Backbone):
 
     def __init__(
@@ -39,7 +40,7 @@ class DarkNet(Backbone):
 
         self.dark5 = self._make_dark_block(layers[4], [512, 1024], norm)
 
-        self._out_features = ("d1", "d2", "d3", "d4", "d5")
+        self._out_features = ("res1", "res2", "res3", "res4", "res5")
 
         current_stride = self.stem.stride
         self._out_feature_strides = {"stem": self.stem.stride}
