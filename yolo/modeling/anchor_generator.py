@@ -4,12 +4,29 @@
 # @File    : anchor_generator.py
 # @Software: PyCharm
 import math
+from typing import List
+
 import torch
+
+from detectron2.layers import ShapeSpec
 from detectron2.modeling.anchor_generator import DefaultAnchorGenerator, ANCHOR_GENERATOR_REGISTRY
 
 
 @ANCHOR_GENERATOR_REGISTRY.register()
 class YoloAnchorGenerator(DefaultAnchorGenerator):
+
+    @classmethod
+    def from_config(cls, cfg, input_shape: List[ShapeSpec]):
+        anchors = cfg.MODEL.ANCHOR_GENERATOR.ANCHORS
+        sizes = [[(w * h) ** (1.0 / 2) for w, h in item] for item in anchors]
+        aspect_ratios = [[h / w for w, h in item] for item in anchors]
+
+        return {
+            "sizes": sizes,
+            "aspect_ratios": aspect_ratios,
+            "strides": [x.stride for x in input_shape],
+            "offset": cfg.MODEL.ANCHOR_GENERATOR.OFFSET,
+        }
 
     def generate_cell_anchors(self, sizes, aspect_ratios):
         anchors = []
