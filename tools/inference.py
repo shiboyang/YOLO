@@ -93,6 +93,7 @@ def setup(args):
     cfg = get_cfg()
     cfg.set_new_allowed(True)
     cfg.merge_from_file(args.config_file)
+    cfg.merge_from_list(args.opts)
     cfg.freeze()
     return cfg
 
@@ -104,6 +105,7 @@ def get_parser():
     parser.add_argument("--output", default="./output")
     parser.add_argument("--score-confs", type=float, default=0.5)
     parser.add_argument("--iou-thresh", type=float, default=0.4)
+    parser.add_argument("--opts", default=None, nargs=argparse.REMAINDER)
     return parser
 
 
