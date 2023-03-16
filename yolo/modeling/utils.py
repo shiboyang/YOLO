@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import cv2
 from torch import Tensor
 from detectron2.structures.boxes import Boxes
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple, Union, Iterator
 import numpy as np
 
 
@@ -121,13 +121,6 @@ def visualize_predictions(image, boxes: torch.Tensor, classes: torch.Tensor, sco
     plt.show()
 
 
-def load_classes(path):
-    """
-    Loads class labels at 'path'
-    """
-    with open(path, "r") as fp:
-        names = fp.read().splitlines()
-    return names
 
 
 if __name__ == '__main__':

@@ -122,7 +122,7 @@ def main():
         # 默认的cv的读入图片格式为BGR
         img = read_image(path, format="BGR")
         predictions, visualized_output = demo.run_on_image(image=img)
-
+        print(predictions)
         cv2.namedWindow("Image", cv2.WINDOW_NORMAL)
         cv2.imshow("Image", visualized_output.get_image()[:, :, ::-1])
         if cv2.waitKey(0) == 27:
