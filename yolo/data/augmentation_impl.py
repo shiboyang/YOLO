@@ -51,7 +51,8 @@ class RandomBlur(Augmentation):
     def __init__(self, kernel_sizes: Optional[List[int]] = None):
         super(RandomBlur, self).__init__()
         if kernel_sizes is None:
-            kernel_sizes = [3, 5, 7]
+            kernel_sizes = [i for i in range(1, 31, 2)]
+
         self._init(locals())
 
     def get_transform(self, *args) -> Transform:
@@ -61,18 +62,18 @@ class RandomBlur(Augmentation):
 
 
 class RandomGaussianBlur(Augmentation):
-    def __init__(self, kernel_sizes=None):
+    def __init__(self, kernel_sizes=None, sigma=0.1):
         super(RandomGaussianBlur, self).__init__()
         if kernel_sizes is None:
-            kernel_sizes = [9]
-        sigma_x = 0
+            kernel_sizes = [i for i in range(1, 31, 2)]
+
         self._init(locals())
 
-    def get_transform(self, *args) -> Transform:
+    def get_transform(self, image) -> Transform:
         ksize = random.choice(self.kernel_sizes)
         ksize = (ksize, ksize)
 
-        return GaussianBlurTransform(ksize, self.sigma_x)
+        return GaussianBlurTransform(ksize, self.sigma)
 
 
 class RandomBilateralFilter(Augmentation):

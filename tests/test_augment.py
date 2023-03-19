@@ -43,7 +43,7 @@ def test_rando_affine(aug_input):
     show(n_img)
 
 
-def test_rando_blur(aug_input):
+def test_random_blur(aug_input):
     original_img = aug_input.image.copy()
     aug = RandomBlur()
     transform = aug(aug_input)
@@ -52,13 +52,20 @@ def test_rando_blur(aug_input):
     show([original_img, aug_input.image, inv_img])
 
 
-def test_gaussian_blur(aug_input):
+def test_gaussian_blur(aug_input, mean=0, sigma=100 ** 0.5):
     original_img = aug_input.image.copy()
-    aug = RandomGaussianBlur()
-    transform = aug(aug_input)
-    inv_transform = transform.inverse()
-    inv_img = inv_transform.apply_image(aug_input.image.copy())
-    show([original_img, aug_input.image, inv_img])
+    # gaussian noise
+    gaussian_noise = np.random.normal(mean, sigma, original_img.shape)
+    noised_img = original_img + gaussian_noise
+    cv2.normalize(noised_img, noised_img, 0, 255, cv2.NORM_MINMAX, dtype=-1)
+    noised_img = noised_img.astype(np.uint8)
+
+    aug = RandomGaussianBlur([3], sigma)
+    aug(aug_input)
+
+    new_img = cv2.fastNlMeansDenoisingColored(noised_img.copy(), None, 10, 10, 7, 21)
+
+    show([original_img, noised_img, aug_input.image, new_img])
 
 
 def test_random_pixel_dropout(aug_input):
@@ -104,13 +111,8 @@ def main():
                       [462.2363, 85.1510, 683.7464, 166.9331],
                       [473.3467, 80.5246, 690.3759, 162.6522]])
 
-    from yolo.data.transforms import GaussianBlurTransform
-    transform = GaussianBlurTransform((3, 3), sigma_x=0)
-    nimg = transform.apply_image(img.copy())
-    transform2 = GaussianBlurTransform((5, 5), sigma_x=0)
-    nimg2 = transform2.apply_image(img.copy())
-
-    show([img, nimg, nimg2])
+    aug_input = AugInput(image=img)
+    test_gaussian_blur(aug_input)
 
 
 if __name__ == '__main__':
