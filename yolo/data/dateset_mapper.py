@@ -10,6 +10,7 @@ import numpy as np
 from detectron2.data.dataset_mapper import DatasetMapper
 import detectron2.data.transforms as T
 from detectron2.config import configurable
+import detection_utils as utils
 
 
 class YOLOV3DatasetMapper:
@@ -31,4 +32,4 @@ class YOLOV3DatasetMapper:
 
     @classmethod
     def from_config(cls, cfg, is_tran: bool = True):
-        aug = build_augmentaion
+        aug = utils.build_augmentation(cfg, is_tran)
