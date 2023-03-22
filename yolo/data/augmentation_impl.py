@@ -117,3 +117,14 @@ class RandomPixelDropout(Augmentation):
             drop_value = np.full_like(image, self.drop_value)
 
         return PixelDropoutTransform(drop_mask, self.dropout_prob, drop_value)
+
+
+class ResizedLongestEdge(Augmentation):
+
+    def __init__(self, long_edge_length):
+        super(ResizedLongestEdge, self).__init__()
+        assert sample_style in ["range", "choice"], sample_style
+
+
+    def get_transform(self, *args) -> Transform:
+        pass

@@ -167,17 +167,3 @@ class PixelDropoutTransform(Transform):
 
     def inverse(self) -> "Transform":
         return NoOpTransform()
-
-
-class CoarseDropoutTransform(Transform):
-    def __init__(self):
-        super(CoarseDropoutTransform, self).__init__()
-
-    def apply_image(self, img: np.ndarray):
-        pass
-
-    def apply_coords(self, coords: np.ndarray):
-        return coords
-
-    def inverse(self) -> "Transform":
-        return NoOpTransform()

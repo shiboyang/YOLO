@@ -1,4 +1,17 @@
+import os
+import cv2
+
 import detectron2.data.transforms as T
+
+
+def read_image(file_name, format=None):
+    assert os.path.exists(file_name), FileNotFoundError(f"{file_name}")
+    if format:
+        assert format in ["BGR", "RGB"], ValueError("Only support `BGR` or `RGB` format")
+    image = cv2.imread(file_name, cv2.IMREAD_COLOR)
+    if format and format == "RGB":
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    return image
 
 
 def build_augmentation(cfg, is_train: bool = True):
