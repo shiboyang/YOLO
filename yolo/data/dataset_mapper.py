@@ -102,13 +102,13 @@ class YOLOV3DatasetMapper:
         if self.is_train and mosaic_flag == 1 and mosaic_samples is not None:
             mosaic_width = self.mosaic_transform.MOSAIC_WIDTH
             mosaic_height = self.mosaic_transform.MOSAIC_HEIGHT
-            out_image = np.zeros([mosaic_height, mosaic_width, 3], dtype=image.dtype)
+            out_image = np.full([mosaic_height, mosaic_width, 3], 114, dtype=image.dtype)
             out_annos = []
             mosaic_border = (-mosaic_height // 4, -mosaic_width // 4)  # H,W
             mosaic_cy, mosaic_cx = [int(np.random.uniform(-x, s + x))
                                     for x, s in zip(mosaic_border, [mosaic_height, mosaic_width])]
 
-            for m_idx in range(self.mosaic_transform.mosaic_transform):
+            for m_idx in range(self.mosaic_transform.NUM_IMAGES):
                 if m_idx != 0:
                     dataset_dict = copy.deepcopy(mosaic_samples[m_idx - 1])
                     image, annos = self._load_image_with_anns(dataset_dict)
@@ -135,17 +135,17 @@ class YOLOV3DatasetMapper:
     def _blend_mosaic(self, idx, image, annos, out_image, xc, yc, mosaic_width, mosaic_height):
         h, w = image.shape[:2]
         if idx == 0:
-            out_image.full_(114)
+            # out_image.full_(114)
             x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc  # xmin, ymin, xmax, ymax (large image)
             x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h  # xmin, ymin, xmax, ymax (small image)
         elif idx == 1:  # top right
-            x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, mosaic_width * 2), yc
+            x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, mosaic_width), yc
             x1b, y1b, x2b, y2b = 0, h - (y2a - y1a), min(w, x2a - x1a), h
         elif idx == 2:  # bottom left
-            x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(mosaic_height * 2, yc + h)
+            x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(mosaic_height, yc + h)
             x1b, y1b, x2b, y2b = w - (x2a - x1a), 0, w, min(y2a - y1a, h)
         elif idx == 3:  # bottom right
-            x1a, y1a, x2a, y2a = xc, yc, min(xc + w, mosaic_width * 2), min(mosaic_height * 2, yc + h)
+            x1a, y1a, x2a, y2a = xc, yc, min(xc + w, mosaic_width), min(mosaic_height, yc + h)
             x1b, y1b, x2b, y2b = 0, 0, min(w, x2a - x1a), min(y2a - y1a, h)
 
         out_image[y1a:y2a, x1a:x2a] = image[y1b:y2b, x1b:x2b]  # img4[ymin:ymax, xmin:xmax]
@@ -154,14 +154,15 @@ class YOLOV3DatasetMapper:
 
         if annos and len(annos) > 0:
             # transform the boxes
-            boxes = np.array(annos["boxes"])
-            boxes[:, 0] += padw
-            boxes[:, 1] += padh
-            boxes[:, 2] += padw
-            boxes[:, 3] += padh
-            boxes = np.clip(boxes, [0, 0, 0, 0], [mosaic_width, mosaic_height, mosaic_width, mosaic_height])
-            # todo segment
-            annos["boxes"] = boxes
+            for anno in annos:
+                box = np.array(anno["bbox"])
+                box[0] += padw
+                box[1] += padh
+                box[2] += padw
+                box[3] += padh
+                box = np.clip(box, [0, 0, 0, 0], [mosaic_width, mosaic_height, mosaic_width, mosaic_height])
+                # todo segment
+                anno["bbox"] = box
 
         return out_image, annos
 
