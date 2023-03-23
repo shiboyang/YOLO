@@ -5,4 +5,4 @@
 # @Software: PyCharm
 from . import anchor_generator
 from .backbone import build_darknet53_backbone
-from .meta_arch import YoloV3
+from .meta_arch import YOLOV3

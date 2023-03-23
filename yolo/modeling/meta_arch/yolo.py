@@ -22,11 +22,11 @@ from yolo.modeling.box_regression import Box2BoxTransform
 from yolo.modeling.matcher import Matcher
 from yolo.modeling.utils import visualize_image, draw_point
 
-__all__ = ["YoloV3"]
+__all__ = ["YOLOV3"]
 
 
 @META_ARCH_REGISTRY.register()
-class YoloV3(DenseDetector):
+class YOLOV3(DenseDetector):
 
     @configurable
     def __init__(
@@ -48,7 +48,7 @@ class YoloV3(DenseDetector):
             pixel_mean,
             pixel_std,
     ):
-        super(YoloV3, self).__init__(backbone, head, in_features, pixel_std=pixel_std, pixel_mean=pixel_mean)
+        super(YOLOV3, self).__init__(backbone, head, in_features, pixel_std=pixel_std, pixel_mean=pixel_mean)
         self.backbone = backbone
         self.in_features = in_features
         self.anchor_generator = anchor_generator

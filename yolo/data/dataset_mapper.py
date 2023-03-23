@@ -9,11 +9,14 @@ from collections import deque
 from typing import List, Union, Optional
 
 import numpy as np
+import torch
 
 from detectron2.config import CfgNode, configurable
 import detectron2.data.transforms as T
 import detectron2.data.detection_utils as utils
 from .detection_utils import build_augmentation, read_image
+
+__all__ = ["YOLOV3DatasetMapper"]
 
 
 class YOLOV3DatasetMapper:
@@ -65,6 +68,7 @@ class YOLOV3DatasetMapper:
             "is_train": is_tran,
             "augmentations": augs,
             "image_format": cfg.INPUT.FORMAT,
+            "mosaic_transform": cfg.INPUT.MOSAIC,
             "use_instance_mask": cfg.MODEL.MASK_ON,
             "instance_mask_format": cfg.INPUT.MASK_FORMAT,
             "recompute_boxes": recompute_boxes
@@ -95,16 +99,16 @@ class YOLOV3DatasetMapper:
 
         image, annos = self._load_image_with_anns(dataset_dict)
 
-        if self.is_train and mosaic_flag == 1 and mosaic_samples:
+        if self.is_train and mosaic_flag == 1 and mosaic_samples is not None:
             mosaic_width = self.mosaic_transform.MOSAIC_WIDTH
-            mosaic_height = self.mosaic_transform.MOAIC_HEIGHT
+            mosaic_height = self.mosaic_transform.MOSAIC_HEIGHT
             out_image = np.zeros([mosaic_height, mosaic_width, 3], dtype=image.dtype)
             out_annos = []
-            mosaic_border = (-mosaic_height // 2, -mosaic_width // 2)  # H,W
-            mosaic_cy, mosaic_cx = [int(np.random.uniform(-x, 2 * s + x))
+            mosaic_border = (-mosaic_height // 4, -mosaic_width // 4)  # H,W
+            mosaic_cy, mosaic_cx = [int(np.random.uniform(-x, s + x))
                                     for x, s in zip(mosaic_border, [mosaic_height, mosaic_width])]
 
-            for m_idx in range(self.mosaic_transform.NUM_IMAGES):
+            for m_idx in range(self.mosaic_transform.mosaic_transform):
                 if m_idx != 0:
                     dataset_dict = copy.deepcopy(mosaic_samples[m_idx - 1])
                     image, annos = self._load_image_with_anns(dataset_dict)
@@ -112,15 +116,19 @@ class YOLOV3DatasetMapper:
                 out_image, annos_i = self._blend_mosaic(
                     m_idx, image, annos, out_image, mosaic_cx, mosaic_cy, mosaic_width, mosaic_height
                 )
-                out_annos.append(annos_i)
-
-        aug_input = T.AugInput(image)
-        self.augmentations()
+                out_annos.extend(annos_i)
+            image, annos = out_image, out_annos
+        # todo mixup
 
         if annos:
-            annos = utils.annotations_to_instances(
+            instances = utils.annotations_to_instances(
                 annos, image.shape[:2], mask_format=self.instance_mask_format
             )
+            if self.recompute_boxes:
+                instances.gt_boxes = instances.gt_masks.get_bounding_boxes()
+            dataset_dict["instances"] = utils.filter_empty_instances(instances)
+
+        dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
 
         return dataset_dict
 
@@ -144,11 +152,18 @@ class YOLOV3DatasetMapper:
         padw = x1a - x1b
         padh = y1a - y1b
 
-        if len(annos):
+        if annos and len(annos) > 0:
+            # transform the boxes
+            boxes = np.array(annos["boxes"])
+            boxes[:, 0] += padw
+            boxes[:, 1] += padh
+            boxes[:, 2] += padw
+            boxes[:, 3] += padh
+            boxes = np.clip(boxes, [0, 0, 0, 0], [mosaic_width, mosaic_height, mosaic_width, mosaic_height])
+            # todo segment
+            annos["boxes"] = boxes
 
-            ...
-
-        return
+        return out_image, annos
 
     def _load_image_with_anns(self, dataset_dict):
         """
@@ -157,12 +172,10 @@ class YOLOV3DatasetMapper:
         image = read_image(dataset_dict["file_name"], format=self.image_format)
         utils.check_image_size(dataset_dict, image)
 
-        T.ResizeShortestEdge().get_transform(image)
-
         aug_input = T.AugInput(image=image)
         transforms = self.augmentations(aug_input)
         image = aug_input.image
-        image_shape = image.shape
+        image_shape = image.shape[:2]
 
         # USER: Modify this if you want to keep them for some reason.
         if not self.is_train:

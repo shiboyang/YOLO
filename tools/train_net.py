@@ -23,8 +23,10 @@ from detectron2.evaluation import (
     verify_results,
 )
 from detectron2.utils import comm
+from detectron2.data import build_detection_train_loader
 
 from yolo.checkpoint import YOLOV3Checkpointer
+from yolo.data.dataset_mapper import YOLOV3DatasetMapper
 
 
 def build_evaluator(cfg, dataset_name, output_folder=None):
@@ -106,6 +108,13 @@ class Trainer(DefaultTrainer):
     #     res = cls.test(cfg, model, evaluators)
     #     res = OrderedDict({k + "_TTA": v for k, v in res.items()})
     #     return res
+
+    def build_train_loader(cls, cfg):
+        if cfg.MODEL.META_ARCHITECTURE == "YOLOV3":
+            mapper = YOLOV3DatasetMapper(cfg, is_train=True)
+        else:
+            mapper = None
+        return build_detection_train_loader(cfg, mapper=mapper)
 
 
 def main(args):

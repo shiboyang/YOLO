@@ -15,9 +15,8 @@ def read_image(file_name, format=None):
 
 
 def build_augmentation(cfg, is_train: bool = True):
-    if cfg.INPUT.MOSACAL.ENABLE:
+    if cfg.INPUT.MOSAIC.ENABLE:
         augmentation = build_yolov3_augmentation(cfg, is_train)
-
     else:
         augmentation = build_normal_augmentation(cfg, is_train)
 
@@ -52,4 +51,14 @@ def build_normal_augmentation(cfg, is_train):
 
 
 def build_yolov3_augmentation(cfg, is_train):
-    return []
+    if is_train:
+        min_size = cfg.INPUT.MIN_SIZE_TRAIN
+        max_size = cfg.INPUT.MAX_SIZE_TRAIN
+        sample_style = cfg.INPUT.MIN_SIZE_TRAIN_SAMPLING
+    else:
+        min_size = cfg.INPUT.MIN_SIZE_TEST
+        max_size = cfg.INPUT.MAX_SIZE_TEST
+        sample_style = "choice"
+    augmentation = [T.ResizeShortestEdge(min_size, max_size, sample_style)]
+
+    return augmentation
