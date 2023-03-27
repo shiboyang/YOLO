@@ -2,6 +2,7 @@ import os
 import cv2
 
 import detectron2.data.transforms as T
+from .augmentation_impl import RandomAffine, RandomColorJitter
 
 
 def read_image(file_name, format=None):
@@ -60,5 +61,36 @@ def build_yolov3_augmentation(cfg, is_train):
         max_size = cfg.INPUT.MAX_SIZE_TEST
         sample_style = "choice"
     augmentation = [T.ResizeShortestEdge(min_size, max_size, sample_style)]
+
+    # random perspective
+    if is_train and cfg.INPUT.RANDOM_AFFIEN.ENABLE:
+        augmentation.append(
+            RandomAffine(
+                translate=cfg.INPUT.RANDOM_AFFIEN.TRANSLATE,
+                scale=cfg.INPUT.RANDOM_AFFIEN.SCALE,
+                degree=cfg.INPUT.RANDOM_AFFIEN.DEGREE,
+                shear=cfg.INPUT.RANDOM_AFFIEN.SHEAR,
+                perspective=cfg.INPUT.RANDOM_AFFIEN.PERSPECTIVE
+            )
+        )
+    # hsv aug
+    if is_train and cfg.INPUT.COLOR_JITTER.ENABLE:
+        augmentation.append(
+            RandomColorJitter(
+                image_format=cfg.INPUT.FORMAT,
+                hue_gain=cfg.INPUT.COLOR_JITTER.HUE,
+                saturation_gain=cfg.INPUT.COLOR_JITTER.SATURATION,
+                exposure_gain=cfg.INPUT.COLOR_JITTER.EXPOSURE
+            )
+        )
+    # flip up-down
+    # flip left-right
+    if is_train and cfg.INPUT.RANDOM_FLIP != "none":
+        augmentation.append(
+            T.RandomFlip(
+                horizontal=cfg.INPUT.RANDOM_FLIP == "horizontal",
+                vertical=cfg.INPUT.RANDOM_FLIP == "vertical",
+            )
+        )
 
     return augmentation

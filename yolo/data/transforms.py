@@ -167,3 +167,26 @@ class PixelDropoutTransform(Transform):
 
     def inverse(self) -> "Transform":
         return NoOpTransform()
+
+
+class ColorJitterTransform(Transform):
+    def __init__(self, hue, saturation, exposure, cvt_format: Tuple[int, int] = (cv2.COLOR_BGR2HSV, cv2.COLOR_HSV2BGR)):
+        super(ColorJitterTransform, self).__init__()
+        self._set_attributes(locals())
+
+    def apply_image(self, img: np.ndarray):
+        img = cv2.cvtColor(img, self.cvt_format[0])
+        hue, saturation, exposure = cv2.split(img)
+        x = np.arange(0, 256)
+        lut_hue = (x * self.hue % 180).astype(img.dtype)
+        lut_saturation = np.clip(x * self.saturation, 0, 255).astype(img.dtype)
+        lut_exposure = np.clip(x * self.exposure, 0, 255).astype(img.dtype)
+        img = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(saturation, lut_saturation), cv2.LUT(exposure, lut_exposure)))
+        img = cv2.cvtColor(img, self.cvt_format[1])
+        return img
+
+    def apply_coords(self, coords: np.ndarray):
+        return coords
+
+    def inverse(self) -> "Transform":
+        return NoOpTransform()

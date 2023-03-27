@@ -86,26 +86,27 @@ class YOLOV3DatasetMapper:
         """
         dataset_dict = copy.deepcopy(dataset_dict)
 
-        mosaic_flag = 0
+        # mosaic_flag = 0
         mosaic_samples = None
         if self.mosaic_transform.ENABLE and self.is_train:
             if len(self.mosaic_pool) > self.mosaic_transform.NUM_IMAGES:
                 mosaic_flag = np.random.randint(2)
-                if mosaic_flag == 1:
-                    mosaic_samples = np.random.choice(self.mosaic_pool, self.mosaic_transform.NUM_IMAGES - 1)
+                # if mosaic_flag == 1:
+                # too many repeated images
+                mosaic_samples = np.random.choice(self.mosaic_pool, self.mosaic_transform.NUM_IMAGES - 1)
 
             # add image info to mosaic pool
             self.mosaic_pool.append(copy.deepcopy(dataset_dict))
 
         image, annos = self._load_image_with_anns(dataset_dict)
 
-        if self.is_train and mosaic_flag == 1 and mosaic_samples is not None:
+        if self.is_train and self.mosaic_transform.ENABLE and mosaic_samples is not None:
             mosaic_width = self.mosaic_transform.MOSAIC_WIDTH
             mosaic_height = self.mosaic_transform.MOSAIC_HEIGHT
-            out_image = np.full([mosaic_height, mosaic_width, 3], 114, dtype=image.dtype)
+            out_image = np.full([mosaic_height * 2, mosaic_width * 2, 3], 114, dtype=image.dtype)
             out_annos = []
-            mosaic_border = (-mosaic_height // 4, -mosaic_width // 4)  # H,W
-            mosaic_cy, mosaic_cx = [int(np.random.uniform(-x, s + x))
+            mosaic_border = (-mosaic_height // 2, -mosaic_width // 2)  # H,W
+            mosaic_cy, mosaic_cx = [int(np.random.uniform(-x, s * 2 + x))
                                     for x, s in zip(mosaic_border, [mosaic_height, mosaic_width])]
 
             for m_idx in range(self.mosaic_transform.NUM_IMAGES):
@@ -139,13 +140,13 @@ class YOLOV3DatasetMapper:
             x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc  # xmin, ymin, xmax, ymax (large image)
             x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h  # xmin, ymin, xmax, ymax (small image)
         elif idx == 1:  # top right
-            x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, mosaic_width), yc
+            x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, mosaic_width * 2), yc
             x1b, y1b, x2b, y2b = 0, h - (y2a - y1a), min(w, x2a - x1a), h
         elif idx == 2:  # bottom left
-            x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(mosaic_height, yc + h)
+            x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(mosaic_height * 2, yc + h)
             x1b, y1b, x2b, y2b = w - (x2a - x1a), 0, w, min(y2a - y1a, h)
         elif idx == 3:  # bottom right
-            x1a, y1a, x2a, y2a = xc, yc, min(xc + w, mosaic_width), min(mosaic_height, yc + h)
+            x1a, y1a, x2a, y2a = xc, yc, min(xc + w, mosaic_width * 2), min(mosaic_height * 2, yc + h)
             x1b, y1b, x2b, y2b = 0, 0, min(w, x2a - x1a), min(y2a - y1a, h)
 
         out_image[y1a:y2a, x1a:x2a] = image[y1b:y2b, x1b:x2b]  # img4[ymin:ymax, xmin:xmax]
@@ -160,7 +161,8 @@ class YOLOV3DatasetMapper:
                 box[1] += padh
                 box[2] += padw
                 box[3] += padh
-                box = np.clip(box, [0, 0, 0, 0], [mosaic_width, mosaic_height, mosaic_width, mosaic_height])
+                box = np.clip(box, [0, 0, 0, 0],
+                              [mosaic_width * 2, mosaic_height * 2, mosaic_width * 2, mosaic_height * 2])
                 # todo segment
                 anno["bbox"] = box
 
@@ -168,7 +170,7 @@ class YOLOV3DatasetMapper:
 
     def _load_image_with_anns(self, dataset_dict):
         """
-        Combined read image, ResizeShortestEdge, transform annotation.
+        Load the image and do augmentation
         """
         image = read_image(dataset_dict["file_name"], format=self.image_format)
         utils.check_image_size(dataset_dict, image)

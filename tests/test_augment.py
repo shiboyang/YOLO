@@ -6,7 +6,7 @@ import numpy as np
 from detectron2.data.transforms import AugInput
 from detectron2.utils.visualizer import Visualizer
 from yolo.data.augmentation_impl import RandomAffine, RandomBlur, RandomGaussianBlur, RandomPixelDropout, \
-    RandomBilateralFilter, RandomMedianBlur
+    RandomBilateralFilter, RandomMedianBlur, RandomColorJitter
 from yolo.utils import visualizer as utils_visualizer
 
 
@@ -103,6 +103,14 @@ def test_random_pixel_dropout(aug_input):
     show(np.vstack(images))
 
 
+def test_distortion(aug_input):
+    original_img = aug_input.image.copy()
+    distortion = RandomColorJitter("BGR", 0.09, 0.09, 0.01)
+    distortion(aug_input)
+    image = np.hstack([original_img, aug_input.image])
+    show(image)
+
+
 def main():
     file = r"./datasets/samples/dog.jpg"
     img = cv2.imread(file, cv2.IMREAD_COLOR)
@@ -112,7 +120,7 @@ def main():
                       [473.3467, 80.5246, 690.3759, 162.6522]])
 
     aug_input = AugInput(image=img)
-    test_gaussian_blur(aug_input)
+    test_distortion(aug_input)
 
 
 if __name__ == '__main__':

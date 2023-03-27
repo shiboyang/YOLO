@@ -1,6 +1,7 @@
 import random
 from typing import List, Optional
 
+import cv2
 import numpy as np
 from fvcore.transforms import Transform
 
@@ -11,7 +12,8 @@ from .transforms import (
     GaussianBlurTransform,
     PixelDropoutTransform,
     BilateralFilterTransform,
-    MedianBlurTransform
+    MedianBlurTransform,
+    ColorJitterTransform
 )
 
 
@@ -101,6 +103,10 @@ class RandomMedianBlur(Augmentation):
 
 
 class RandomPixelDropout(Augmentation):
+    """
+    随机像素点删除
+    """
+
     def __init__(self, dropout_prob=0.01, per_channel: bool = False, drop_value: int = 0):
         super(RandomPixelDropout, self).__init__()
         self._init(locals())
@@ -119,12 +125,25 @@ class RandomPixelDropout(Augmentation):
         return PixelDropoutTransform(drop_mask, self.dropout_prob, drop_value)
 
 
-class ResizedLongestEdge(Augmentation):
+class RandomColorJitter(Augmentation):
+    """
+    随机颜色抖动
+    hue_gain[0, 1] 色度
+    saturation_gain[0, 1] 饱和度
+    exposure_gain[0, 1] 曝光
+    """
 
-    def __init__(self, long_edge_length):
-        super(ResizedLongestEdge, self).__init__()
-        assert sample_style in ["range", "choice"], sample_style
+    def __init__(self, image_format: str, hue_gain: float, saturation_gain: float, exposure_gain: float):
+        super(RandomColorJitter, self).__init__()
+        assert image_format in ["BGR", "RGB"], ValueError(f"Only support BGR, RGB format. {image_format}")
 
+        self._init(locals())
 
-    def get_transform(self, *args) -> Transform:
-        pass
+    def get_transform(self, image) -> Transform:
+        if self.image_format == "RGB":
+            cvt_format = (cv2.COLOR_RGB2HSV, cv2.COLOR_HSV2RGB)
+        else:
+            cvt_format = (cv2.COLOR_BGR2HSV, cv2.COLOR_HSV2BGR)
+        hug_gain, saturation_gain, exposure_gain = np.random.uniform(-1, 1, 3) * [self.hue_gain, self.saturation_gain,
+                                                                                  self.exposure_gain] + 1
+        return ColorJitterTransform(hug_gain, saturation_gain, exposure_gain, cvt_format)

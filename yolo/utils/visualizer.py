@@ -14,3 +14,9 @@ def draw_box(img: np.ndarray, boxes: Iterator[Union[Tuple[float, float, float, f
         x1, y1, x2, y2 = map(int, box)
         cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), thickness=1)
     return img
+
+
+# nimg = draw_box(image, [b["bbox"] for b in annos])
+# import matplotlib.pyplot as plt
+# plt.imshow(nimg)
+# plt.show()
