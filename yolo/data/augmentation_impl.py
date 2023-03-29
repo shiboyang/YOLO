@@ -13,7 +13,7 @@ from .transforms import (
     PixelDropoutTransform,
     BilateralFilterTransform,
     MedianBlurTransform,
-    ColorJitterTransform
+    ColorJitterTransform, LetterBoxTransform
 )
 
 
@@ -91,6 +91,10 @@ class RandomBilateralFilter(Augmentation):
 
 
 class RandomMedianBlur(Augmentation):
+    """
+    中值模糊
+    """
+
     def __init__(self, ksizes: Optional[List[int]] = None):
         super(RandomMedianBlur, self).__init__()
         if ksizes is None:
@@ -147,3 +151,22 @@ class RandomColorJitter(Augmentation):
         hug_gain, saturation_gain, exposure_gain = np.random.uniform(-1, 1, 3) * [self.hue_gain, self.saturation_gain,
                                                                                   self.exposure_gain] + 1
         return ColorJitterTransform(hug_gain, saturation_gain, exposure_gain, cvt_format)
+
+
+class LetterBox(Augmentation):
+    """
+    LetterBox数据增强： 将图片放置在目标区域的中间，边缘使用灰度像素值填充。
+    如果图像最长边超出了目标长度，将对图片进行保持长宽比的缩放后，再做填充操作。
+    """
+
+    def __init__(self, new_height, new_width):
+        super(LetterBox, self).__init__()
+        self._init(locals())
+
+    def get_transform(self, image) -> Transform:
+        img_h, img_w = image.shape[:2]
+        ratio = min(self.new_height / img_h, self.new_width / img_w)
+        resized_h, resized_w = round(img_h * ratio), round(img_w * ratio)
+        dh = (self.new_height - resized_h) // 2
+        dw = (self.new_width - resized_w) // 2
+        return LetterBoxTransform(dh, dh, dw, dw, ratio, (resized_h, resized_w))

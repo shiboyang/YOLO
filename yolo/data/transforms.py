@@ -190,3 +190,31 @@ class ColorJitterTransform(Transform):
 
     def inverse(self) -> "Transform":
         return NoOpTransform()
+
+
+class LetterBoxTransform(Transform):
+    """
+    top: 顶部pad的尺寸
+    ratio: 图片放缩比例 [ new_h/img_h, new_w/img_w]
+    new_size: 最终图片的尺寸 [h, w]
+    """
+
+    def __init__(self, top: int, bottom: int, left: int, right: int, ratio: Tuple[float, float],
+                 new_size: Tuple[int, int]):
+        super(LetterBoxTransform, self).__init__()
+        self._set_attributes(locals())
+
+    def apply_image(self, img: np.ndarray):
+        if img.shape[0] != self.new_size[0] or img.shape[1] != self.new_size[1]:
+            img = cv2.resize(img, self.new_size[::-1], interpolation=cv2.INTER_LINEAR)
+        img = cv2.copyMakeBorder(img, self.top, self.bottom, self.left, self.right, cv2.BORDER_CONSTANT,
+                                 value=(114, 114, 114))
+        return img
+
+    def apply_coords(self, coords: np.ndarray):
+        coords[:, 0] = coords[:, 0] * self.ratio + self.left
+        coords[:, 1] = coords[:, 1] * self.ratio + self.top
+        return coords
+
+    def inverse(self) -> "Transform":
+        pass

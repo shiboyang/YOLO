@@ -6,7 +6,7 @@ import numpy as np
 from detectron2.data.transforms import AugInput
 from detectron2.utils.visualizer import Visualizer
 from yolo.data.augmentation_impl import RandomAffine, RandomBlur, RandomGaussianBlur, RandomPixelDropout, \
-    RandomBilateralFilter, RandomMedianBlur, RandomColorJitter
+    RandomBilateralFilter, RandomMedianBlur, RandomColorJitter, LetterBox
 from yolo.utils import visualizer as utils_visualizer
 
 
@@ -111,6 +111,15 @@ def test_distortion(aug_input):
     show(image)
 
 
+def test_letterbox(aug_input):
+    original_img = aug_input.image.copy()
+    letterbox = LetterBox(608, 640)
+    letterbox(aug_input)
+    # image = np.hstack([original_img, aug_input.image])
+    image = utils_visualizer.draw_box(aug_input.image, aug_input.boxes)
+    show(image)
+
+
 def main():
     file = r"./datasets/samples/dog.jpg"
     img = cv2.imread(file, cv2.IMREAD_COLOR)
@@ -119,8 +128,8 @@ def main():
                       [462.2363, 85.1510, 683.7464, 166.9331],
                       [473.3467, 80.5246, 690.3759, 162.6522]])
 
-    aug_input = AugInput(image=img)
-    test_distortion(aug_input)
+    aug_input = AugInput(image=img, boxes=boxes)
+    test_letterbox(aug_input)
 
 
 if __name__ == '__main__':
