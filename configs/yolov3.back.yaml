@@ -7,7 +7,13 @@ MODEL:
   BACKBONE:
     NAME: "build_darknet53_fpn_backbone"
   DARKNET:
+    STEM_OUT_CHANNELS: 32
+    NORM: "BN"
     OUT_FEATURES: [ "res3", "res4", "res5" ]
+  DARKNET_FPN:
+    NAME: "build_darknet_fpn"
+    IN_FEATURES: [ "res3", "res4", "res5" ]
+    NORM: "BN"
   ANCHOR_GENERATOR:
     NAME: "YoloAnchorGenerator"
     OFFSET: 0.5
@@ -15,14 +21,13 @@ MODEL:
       - [ [ 10,13 ],[ 16,30 ],[ 33,23 ] ]
       - [ [ 30,61 ],[ 62,45 ],[ 59,119 ] ]
       - [ [ 116,90 ],[ 156,198 ],[ 373,326 ] ]
-  YOLOV3:
+  YOLO:
     IN_FEATURES: [ "p3", "p4", "p5" ]
     NUM_CLASSES: 80
+    IOU_THRESHOLD: 0.5
+    IOU_LABELS: [ -1, 0, 1 ]
     TEST_SCORE_THRESH: 0.25
     TEST_NMS_THRESH: 0.5
-  MATCHER:
-    IGNORE_THRESHOLD: 0.5
-    LABELS: [ -1, 0, 1 ]
 DATASETS:
   TRAIN: ("coco_2017_train",)
   TEST: ("coco_2017_val",)
@@ -33,9 +38,32 @@ SOLVER:
   MAX_ITER: 90000
 INPUT:
   FORMAT: "RGB"
-  MIN_SIZE_TRAIN: (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)
+  #  MIN_SIZE_TRAIN: (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)
+  MIN_SIZE_TRAIN: (640,)
   MAX_SIZE_TRAIN: 640
   MIN_SIZE_TEST: 448
+  MOSAIC:
+    ENABLE: True
+    NUM_IMAGES: 4
+    MOSAIC_WIDTH: 640
+    MOSAIC_HEIGHT: 640
+    POOL_CAPACITY: 10
+  RANDOM_AFFINE:
+    ENABLE: True
+    TRANSLATE: 0.1
+    SCALE: 0.1
+    DEGREE: 0
+    SHEAR: 10.0
+    PERSPECTIVE: 0.0
+  COLOR_JITTER:
+    ENABLE: True
+    HUE: 0.1
+    SATURATION: 1.5
+    EXPOSURE: 1.5
+  LETTERBOX:
+    ENABLE: True
+    HEIGHT: 640
+    WIDTH: 640
 
 TEST:
   EVAL_PERIOD: 10000

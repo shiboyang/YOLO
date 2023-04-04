@@ -193,10 +193,10 @@ class DarkNetFPN(Backbone):
 @BACKBONE_REGISTRY.register()
 def build_darknet53_fpn_backbone(cfg, input_shape):
     bottom_up = build_darknet53_backbone(cfg, input_shape)
-    in_features = cfg.MODEL.DARKNET_FPN.IN_FEATURES
+    in_features = cfg.MODEL.DARKNET.OUT_FEATURES
     backbone_shape = bottom_up.output_shape()
     feature_shape = [backbone_shape[f] for f in in_features]
-    num_classes = cfg.MODEL.YOLO.NUM_CLASSES
+    num_classes = cfg.MODEL.YOLOV3.NUM_CLASSES
     num_anchors = build_anchor_generator(cfg, feature_shape).num_cell_anchors
     assert (
             len(set(num_anchors)) == 1
@@ -205,7 +205,7 @@ def build_darknet53_fpn_backbone(cfg, input_shape):
 
     out_channels = (4 + 1 + num_classes) * num_anchors
 
-    norm = cfg.MODEL.DARKNET_FPN.NORM
+    norm = cfg.MODEL.DARKNET.NORM
     backbone = DarkNetFPN(
         bottom_up=bottom_up,
         in_features=in_features,

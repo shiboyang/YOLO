@@ -70,7 +70,7 @@ class YOLOV3(DenseDetector):
     def from_config(cls, cfg):
         backbone = build_backbone(cfg)
         backbone_shape = backbone.output_shape()
-        in_features = cfg.MODEL.YOLO.IN_FEATURES
+        in_features = cfg.MODEL.YOLOV3.IN_FEATURES
         feature_shape = [backbone_shape[f] for f in in_features]
         anchor_generator = build_anchor_generator(cfg, feature_shape)
         num_anchors = anchor_generator.num_cell_anchors
@@ -78,7 +78,7 @@ class YOLOV3(DenseDetector):
                 len(set(num_anchors)) == 1
         ), "Using different number of anchors between levels is not currently supported!"
         num_anchors = num_anchors[0]
-        num_classes = cfg.MODEL.YOLO.NUM_CLASSES
+        num_classes = cfg.MODEL.YOLOV3.NUM_CLASSES
 
         return {
             "in_features": in_features,
@@ -87,15 +87,15 @@ class YOLOV3(DenseDetector):
             "anchor_generator": anchor_generator,
             "box2box_transform": Box2BoxTransform((1., 1., 1., 1.), 0.5),
             "anchor_matcher": Matcher(
-                threshold=cfg.MODEL.YOLO.IOU_THRESHOLD,
-                labels=cfg.MODEL.YOLO.IOU_LABELS,
+                threshold=cfg.MODEL.MATCHER.IGNORE_THRESHOLD,
+                labels=cfg.MODEL.MATCHER.LABELS,
                 allow_low_quality_matches=False
             ),
-            "num_classes": cfg.MODEL.YOLO.NUM_CLASSES,
+            "num_classes": cfg.MODEL.YOLOV3.NUM_CLASSES,
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
             "pixel_std": cfg.MODEL.PIXEL_STD,
-            "test_score_thresh": cfg.MODEL.YOLO.TEST_SCORE_THRESH,
-            "test_nms_thresh": cfg.MODEL.YOLO.TEST_NMS_THRESH
+            "test_score_thresh": cfg.MODEL.YOLOV3.TEST_SCORE_THRESH,
+            "test_nms_thresh": cfg.MODEL.YOLOV3.TEST_NMS_THRESH
         }
 
     def forward_training(self, images, features, predictions, gt_instances):
@@ -381,43 +381,6 @@ class YOLOV3(DenseDetector):
         return Instances(
             image_size=image_size, pred_boxes=Boxes(pred_boxes), scores=pred_confs, pred_classes=pred_cls
         )
-
-    # def _decode_per_level_predictions(self,
-    #                                   anchors: Boxes,
-    #                                   stride: Union[float, Tensor],
-    #                                   box_deltas: Tensor,
-    #                                   box_confs: Tensor,
-    #                                   cls_scores: Tensor,
-    #                                   image_size: Tuple[int, int]) -> Instances:
-    #
-    #     # 1. Keep boxes with confidence score higher than threshold
-    #     conf_mask = (box_confs >= self.test_score_thresh)
-    #     box_confs = box_confs[conf_mask]
-    #     topk_idxs = torch.nonzero(conf_mask)[:, 0]
-    #
-    #     # 2. Keep top k scoring boxes only
-    #     num_topk = min(self.test_topk_candidates, topk_idxs.size(0))
-    #     box_confs, idxs = box_confs.topk(num_topk)
-    #     topk_idxs = topk_idxs[idxs]
-    #
-    #     if isinstance(stride, Tensor): stride = stride[topk_idxs]
-    #     pred_boxes = self.box2box_transform.apply_deltas(
-    #         box_deltas[topk_idxs], anchors.tensor[topk_idxs], stride,
-    #     )
-    #
-    #     # 3. P(cls) = P(obj) * P(cls | obj)
-    #     cls_scores = cls_scores[topk_idxs]
-    #     cls_scores.mul_(box_confs[:, None])
-    #     pred_scores, pred_classes = cls_scores.max(dim=1)
-    #
-    #     # 4. Filter out low confidence boxes
-    #     conf_mask = (pred_scores >= self.test_score_thresh)
-    #     pred_scores = pred_scores[conf_mask]
-    #     pred_classes = pred_classes[conf_mask]
-    #     pred_boxes = pred_boxes[conf_mask]
-    #
-    #     return Instances(image_size, pred_boxes=Boxes(pred_boxes), scores=pred_scores, pred_classes=pred_classes)
-    #
 
 
 class YoloV3Head(nn.Module):

@@ -3,13 +3,11 @@
 # @Site    : 
 # @File    : train_net.py
 # @Software: PyCharm
-import logging
 import os
 import weakref
-from collections import OrderedDict
 
-from detectron2.config import get_cfg
 from detectron2.data import MetadataCatalog
+from detectron2.data import build_detection_train_loader
 from detectron2.engine import DefaultTrainer, default_argument_parser, launch, default_setup
 from detectron2.evaluation import (
     CityscapesInstanceEvaluator,
@@ -23,9 +21,9 @@ from detectron2.evaluation import (
     verify_results,
 )
 from detectron2.utils import comm
-from detectron2.data import build_detection_train_loader
 
 from yolo.checkpoint import YOLOV3Checkpointer
+from yolo.config import get_cfg
 from yolo.data.dataset_mapper import YOLOV3DatasetMapper
 
 
@@ -71,7 +69,6 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
 
 def setup(args):
     cfg = get_cfg()
-    cfg.set_new_allowed(True)
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
     cfg.freeze()
