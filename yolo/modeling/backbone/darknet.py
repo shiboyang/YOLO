@@ -8,8 +8,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import List
-from collections import OrderedDict
 import fvcore.nn.weight_init as weight_init
 
 from detectron2.layers import get_norm, Conv2d, ShapeSpec
@@ -18,7 +16,6 @@ from detectron2.layers.blocks import CNNBlockBase
 
 
 class DownSample(CNNBlockBase):
-
     def __init__(self, in_channels, out_channels, stride=2, norm="BN"):
         super(DownSample, self).__init__(in_channels, out_channels, stride)
         self.conv = Conv2d(
@@ -35,52 +32,6 @@ class DownSample(CNNBlockBase):
     def forward(self, x):
         out = self.conv(x)
         out = F.leaky_relu(out, 0.1)
-        return out
-
-
-class Residual(CNNBlockBase):
-    def __init__(self, in_channels: int, out_channels: List[int], norm: str):
-        """
-        Residual layer
-        一个残差单元包含 conv 1x1 --> conv 3x3 这个模块并不会改变feature_map的大小
-        :param in_channels: int
-        :param out_channels: lens=2 List[int]
-        """
-        super(Residual, self).__init__(in_channels, out_channels[-1], 1)
-        assert in_channels == out_channels[-1]
-
-        use_bias = norm == ""
-        self.conv1 = Conv2d(
-            in_channels=in_channels,
-            out_channels=out_channels[0],
-            kernel_size=1,
-            stride=1,
-            padding=0,
-            bias=use_bias,
-            norm=get_norm(norm, out_channels[0])
-        )
-        self.conv2 = Conv2d(
-            in_channels=out_channels[0],
-            out_channels=out_channels[1],
-            kernel_size=3,
-            stride=1,
-            padding=1,
-            bias=use_bias,
-            norm=get_norm(norm, out_channels[1])
-        )
-        for layer in [self.conv1, self.conv2]:
-            weight_init.c2_msra_fill(layer)
-
-    def forward(self, x):
-        residual = x.clone()
-
-        out = self.conv1(x)
-        out = F.leaky_relu(out, 0.1)
-
-        out = self.conv2(out)
-        out = F.leaky_relu(out, 0.1)
-
-        out += residual
         return out
 
 
@@ -109,94 +60,14 @@ class BasicStem(CNNBlockBase):
         return out
 
 
-# todo Implement make_stage() function.
-class DarkNet(Backbone):
-
-    def __init__(
-            self,
-            stem: BasicStem,
-            layers: List[int],
-            norm: str
-    ):
-        super(DarkNet, self).__init__()
-        self.stem = stem
-        self.in_channel = self.stem.out_channels
-
-        self.dark1 = self._make_dark_block(layers[0], [32, 64], norm)
-
-        self.dark2 = self._make_dark_block(layers[1], [64, 128], norm)
-
-        self.dark3 = self._make_dark_block(layers[2], [128, 256], norm)
-
-        self.dark4 = self._make_dark_block(layers[3], [256, 512], norm)
-
-        self.dark5 = self._make_dark_block(layers[4], [512, 1024], norm)
-
-        self._out_features = ("res1", "res2", "res3", "res4", "res5")
-
-        current_stride = self.stem.stride
-        self._out_feature_strides = {"stem": self.stem.stride}
-        self._out_feature_channels = {"stem": self.stem.out_channels}
-        for idx, blocks in enumerate([self.dark1, self.dark2, self.dark3, self.dark4, self.dark5]):
-            name = self._out_features[idx]
-            self._out_feature_strides[name] = current_stride = current_stride * np.prod([k.stride for k in blocks])
-            self._out_feature_channels[name] = blocks[-1].out_channels
-
-    def forward(self, x):
-        out = self.stem(x)
-        res_dark1 = self.dark1(out)
-        res_dark2 = self.dark2(res_dark1)
-        res_dark3 = self.dark3(res_dark2)
-        res_dark4 = self.dark4(res_dark3)
-        res_dark5 = self.dark5(res_dark4)
-
-        return {k: v for v, k in zip([res_dark1, res_dark2, res_dark3, res_dark4, res_dark5], self._out_features)}
-
-    def _make_dark_block(self, blocks: int, out_channels: List[int], norm: str):
-        """
-        DownSample(downsample_conv -> downsample_bn -> downsample_relu) -> Residual
-        :param blocks: int
-        :param out_channels: List[int] the list of out_channels, len(out_channels) = 2
-        :return:
-        """
-        layers = []
-        layers.append(("DownSample", DownSample(self.in_channel, out_channels[-1])))
-        self.in_channel = out_channels[-1]
-        for i in range(blocks):
-            residual = Residual(self.in_channel, out_channels, norm)
-            layers.append((f"Residual{i}", residual))
-
-        return nn.Sequential(OrderedDict(layers))
-
-    def darknet_modules(self):
-        for name, conv in self.modules():
-            if isinstance(conv, Conv2d):
-                yield name, conv
-
-
-@BACKBONE_REGISTRY.register()
-def build_darknet53_backbone(cfg, input_shape):
-    stem = BasicStem(
-        in_channels=input_shape.channels,
-        out_channels=cfg.MODEL.DARKNET.STEM_OUT_CHANNELS,
-        norm=cfg.MODEL.DARKNET.NORM
-    )
-    backbone = DarkNet(
-        stem,
-        [1, 2, 8, 8, 4],
-        norm=cfg.MODEL.DARKNET.NORM
-    )
-    return backbone
-
-
 class ResidualBlock(CNNBlockBase):
     def __init__(self, in_channels: int, out_channels: int, norm: str, downsample: bool = False):
         """
         Residual layer
-        一个残差单元包含: downsample - conv 1x1 - conv 3x3
+        残差单元(downsample -> conv1x1 -> conv3x3)
         :param in_channels: 输入特征图的通道数
         :param out_channels: 经过这个单元处理后输出特征图的通道数
-        :param norm
+        :param norm: BN
         :param downsample: 是否使用 k=3x3 s=2 pad=1 进行下采样
         """
         super(ResidualBlock, self).__init__(in_channels=in_channels, out_channels=out_channels,
@@ -255,7 +126,7 @@ class ResidualBlock(CNNBlockBase):
         return out
 
 
-class DarkNet2(Backbone):
+class DarkNet(Backbone):
     """
     Implement :paper:`DarkNet`.
     """
@@ -310,6 +181,7 @@ class DarkNet2(Backbone):
         self.stage_names = tuple(self.stage_names)  # Make it static for scripting
 
         if num_classes is not None:
+            # todo this copied form resnet.
             self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
             self.linear = nn.Linear(curr_channels, num_classes)
 
@@ -414,65 +286,9 @@ class DarkNet2(Backbone):
             in_channels = out_channels
         return blocks
 
-    # @staticmethod
-    # def make_default_stages(depth, block_class=None, **kwargs):
-    #     """
-    #     Created list of ResNet stages from pre-defined depth (one of 18, 34, 50, 101, 152).
-    #     If it doesn't create the ResNet variant you need, please use :meth:`make_stage`
-    #     instead for fine-grained customization.
-    #
-    #     Args:
-    #         depth (int): depth of ResNet
-    #         block_class (type): the CNN block class. Has to accept
-    #             `bottleneck_channels` argument for depth > 50.
-    #             By default it is BasicBlock or BottleneckBlock, based on the
-    #             depth.
-    #         kwargs:
-    #             other arguments to pass to `make_stage`. Should not contain
-    #             stride and channels, as they are predefined for each depth.
-    #
-    #     Returns:
-    #         list[list[CNNBlockBase]]: modules in all stages; see arguments of
-    #             :class:`ResNet.__init__`.
-    #     """
-    #     num_blocks_per_stage = {
-    #         18: [2, 2, 2, 2],
-    #         34: [3, 4, 6, 3],
-    #         50: [3, 4, 6, 3],
-    #         101: [3, 4, 23, 3],
-    #         152: [3, 8, 36, 3],
-    #     }[depth]
-    #     if block_class is None:
-    #         block_class = BasicBlock if depth < 50 else BottleneckBlock
-    #     if depth < 50:
-    #         in_channels = [64, 64, 128, 256]
-    #         out_channels = [64, 128, 256, 512]
-    #     else:
-    #         in_channels = [64, 256, 512, 1024]
-    #         out_channels = [256, 512, 1024, 2048]
-    #     ret = []
-    #     for (n, s, i, o) in zip(num_blocks_per_stage, [1, 2, 2, 2], in_channels, out_channels):
-    #         if depth >= 50:
-    #             kwargs["bottleneck_channels"] = o // 4
-    #         ret.append(
-    #             ResNet.make_stage(
-    #                 block_class=block_class,
-    #                 num_blocks=n,
-    #                 stride_per_block=[s] + [1] * (n - 1),
-    #                 in_channels=i,
-    #                 out_channels=o,
-    #                 **kwargs,
-    #             )
-    #         )
-    #     return ret
-
-
-def make_stage(*args, **kwargs):
-    return
-
 
 @BACKBONE_REGISTRY.register()
-def build_darknet53_backbone2(cfg, input_shape):
+def build_darknet53_backbone(cfg, input_shape):
     """
        Create a DarkNet instance from config.
 
@@ -509,9 +325,9 @@ def build_darknet53_backbone2(cfg, input_shape):
             "out_channels": out_channels,
             "norm": norm,
         }
-        blocks = DarkNet2.make_stage(**stage_kargs)
+        blocks = DarkNet.make_stage(**stage_kargs)
         in_channels = out_channels
         out_channels *= 2
         stages.append(blocks)
 
-    return DarkNet2(stem, stages, out_features=out_features, freeze_at=freeze_at)
+    return DarkNet(stem, stages, out_features=out_features, freeze_at=freeze_at)
