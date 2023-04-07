@@ -1,4 +1,4 @@
 ### todo list
-- [ ] freeze
-- [ ] training
-- [ ] loss, confidence loss
+- [x] freeze
+- [x] training
+- [x] loss, confidence loss

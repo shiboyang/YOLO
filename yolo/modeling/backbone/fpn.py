@@ -13,7 +13,6 @@ from detectron2.modeling import BACKBONE_REGISTRY, build_anchor_generator
 from detectron2.modeling.backbone import Backbone
 from detectron2.layers import Conv2d, get_norm, CNNBlockBase
 from . import build_darknet53_backbone
-from .darknet import build_darknet53_backbone2
 
 __all__ = ["DarkNetFPN"]
 
@@ -193,7 +192,7 @@ class DarkNetFPN(Backbone):
 
 @BACKBONE_REGISTRY.register()
 def build_darknet53_fpn_backbone(cfg, input_shape):
-    bottom_up = build_darknet53_backbone2(cfg, input_shape)
+    bottom_up = build_darknet53_backbone(cfg, input_shape)
     in_features = cfg.MODEL.DARKNET.OUT_FEATURES
     backbone_shape = bottom_up.output_shape()
     feature_shape = [backbone_shape[f] for f in in_features]

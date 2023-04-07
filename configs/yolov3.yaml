@@ -17,19 +17,19 @@ MODEL:
       - [ [ 116,90 ],[ 156,198 ],[ 373,326 ] ]
   YOLOV3:
     IN_FEATURES: [ "p3", "p4", "p5" ]
-    NUM_CLASSES: 80
+    NUM_CLASSES: 20
     TEST_SCORE_THRESH: 0.25
     TEST_NMS_THRESH: 0.5
   MATCHER:
     IGNORE_THRESHOLD: 0.5
     LABELS: [ -1, 0, 1 ]
 DATASETS:
-  TRAIN: ("coco_2017_train",)
-  TEST: ("coco_2017_val",)
+  TRAIN: ("voc_2012_train",)
+  TEST: ("voc_2012_val",)
 SOLVER:
   IMS_PER_BATCH: 4
   BASE_LR: 0.01  # Note that RetinaNet uses a different default learning rate
-  STEPS: (3000, 10000)
+  STEPS: (15000, 18000)
   MAX_ITER: 20000
 INPUT:
   FORMAT: "RGB"
