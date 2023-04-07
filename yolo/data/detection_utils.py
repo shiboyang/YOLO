@@ -55,14 +55,14 @@ def build_normal_augmentation(cfg, is_train):
         augmentation.append(T.ResizeShortestEdge(min_size, max_size, sample_style))
 
     # random_perspective
-    if is_train and cfg.INPUT.RANDOM_AFFIEN.ENABLE:
+    if is_train and cfg.INPUT.RANDOM_AFFINE.ENABLE:
         augmentation.append(
             RandomAffine(
-                translate=cfg.INPUT.RANDOM_AFFIEN.TRANSLATE,
-                scale=cfg.INPUT.RANDOM_AFFIEN.SCALE,
-                degree=cfg.INPUT.RANDOM_AFFIEN.DEGREE,
-                shear=cfg.INPUT.RANDOM_AFFIEN.SHEAR,
-                perspective=cfg.INPUT.RANDOM_AFFIEN.PERSPECTIVE
+                translate=cfg.INPUT.RANDOM_AFFINE.TRANSLATE,
+                scale=cfg.INPUT.RANDOM_AFFINE.SCALE,
+                degree=cfg.INPUT.RANDOM_AFFINE.DEGREE,
+                shear=cfg.INPUT.RANDOM_AFFINE.SHEAR,
+                perspective=cfg.INPUT.RANDOM_AFFINE.PERSPECTIVE
             )
         )
     # hsv aug

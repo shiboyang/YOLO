@@ -12,12 +12,12 @@ import torch
 import tqdm
 
 import detectron2.data.transforms as T
-from detectron2.config import get_cfg
 from detectron2.data import MetadataCatalog
 from detectron2.data.detection_utils import read_image
 from detectron2.modeling import build_model
 from detectron2.utils.visualizer import Visualizer, ColorMode
 from yolo.checkpoint.checkpoint import YOLOV3Checkpointer
+from yolo.config import get_cfg
 
 
 class Predictor:
@@ -91,16 +91,17 @@ class VisualizationDemo:
 
 def setup(args):
     cfg = get_cfg()
-    cfg.set_new_allowed(True)
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
+    cfg.MODEL.YOLOV3.TEST_SCORE_THRESH = args.score_confs
+    cfg.MODEL.YOLOV3.TEST_NMS_THRESH = args.iou_thresh
     cfg.freeze()
     return cfg
 
 
 def get_parser():
     parser = argparse.ArgumentParser(description="YOLO V3 Inference")
-    parser.add_argument("--config-file", metavar="FILE", default="configs/yolov3_inference.yaml")
+    parser.add_argument("--config-file", metavar="FILE", default="configs/yolov3.yaml")
     parser.add_argument("--input", nargs="+", required=True)
     parser.add_argument("--output", default="./output")
     parser.add_argument("--score-confs", type=float, default=0.5)
